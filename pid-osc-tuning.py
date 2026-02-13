@@ -360,7 +360,7 @@ def main():
     </style>
     """, unsafe_allow_html=True)
     
-    st.title("🕹️ Control Engineering Dashboard")
+    st.title("🕹️ PID Control - Oscillation Tuning")
 
     if 'kp' not in st.session_state: st.session_state.kp = 2.0
     if 'tn' not in st.session_state: st.session_state.tn = 10.0
@@ -383,9 +383,9 @@ def main():
         with st.sidebar:
             st.header("1. Plant Parameters")
             
-            m_order = st.selectbox("System Structure", ["1st Order System", "2nd Order System", "3rd Order System"], index=0, key="m_order")
+            m_order = st.selectbox("System Structure", ["1st Order System", "2nd Order System", "3rd Order System"], index=1, key="m_order")
             
-            m_v = st.slider("Gain (K)", 0.1, 10.0, 2.0, 0.1, key="m_v")
+            m_v = st.slider("Gain (K)", 0.1, 10.0, 2.7, 0.1, key="m_v")
             m_integrator = False
             
             # Dynamic Sliders based on Order
@@ -406,7 +406,7 @@ def main():
                 m_t3 = st.slider("Time Constant 3 (T3)", 0.1, 20.0, 0.5, 0.1, key="m_t3")
                 time_consts.append(m_t3)
             
-            m_delay = st.slider("Dead Time [s]", 0.0, 10.0, 2.0, key="m_delay")
+            m_delay = st.slider("Dead Time [s]", 0.0, 10.0, 0.5, key="m_delay")
             st.divider()
             m_noise_amp = st.slider("Measurement Noise (Amp)", 0.0, 1.0, 0.0, 0.01, key="m_noise_amp")
 
@@ -462,7 +462,7 @@ def main():
     with tab2:
         with st.sidebar:
             st.header("2. Autotuning Setup")
-            t_mode_sel = st.selectbox("Algorithm", options=[1, 2, 3], index=2,
+            t_mode_sel = st.selectbox("Algorithm", options=[1, 2, 3], index=1,
                                       format_func=lambda x: {1: "Phase 1 Only", 2: "Symmetric", 3: "Automatic"}[x], key="t_mode_sel")
             if t_mode_sel == 3: t_min_qual = st.slider("Min. Symmetry Quality [%]", 50, 100, 95, key="t_min_qual")
             else: t_min_qual = 95.0
