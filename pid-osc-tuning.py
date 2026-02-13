@@ -1,13 +1,15 @@
 import streamlit as st
 import numpy as np
+import pandas as pd  # Added for CSV handling
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from scipy.integrate import odeint
 from dataclasses import dataclass, field
 from enum import IntEnum
+import json 
 
 # ==========================================
-# --- CLASS DEFINITIONS (Previously External) ---
+# --- CLASS DEFINITIONS ---
 # ==========================================
 
 class TuningState(IntEnum):
@@ -296,12 +298,48 @@ def simulate_pid_response(time_vector, model_params, pid_conf):
         
     return pv, op, e, p_term, i_term, d_term
 
+# --------------------------------------------------------------------------------
+# CALLBACK: Load Configuration
+# Runs BEFORE the script re-runs to prevent "widget already instantiated" errors.
+# --------------------------------------------------------------------------------
+def load_config_callback():
+    if st.session_state.uploader_key is not None:
+        try:
+            # Read file from uploader (available in session state via key)
+            uploaded_file = st.session_state.uploader_key
+            data = json.load(uploaded_file)
+            
+            # Update session state with loaded values
+            for k, v in data.items():
+                st.session_state[k] = v
+            
+            st.toast("✅ Configuration loaded successfully!", icon="💾")
+        except Exception as e:
+            st.error(f"Error loading file: {e}")
+
 # ==========================================
 # --- MAIN UI STRUCTURE ---
 # ==========================================
 
 def main():
     st.set_page_config(page_title="PID Tuner Ultimate", layout="wide")
+    
+    # CSS styling for bigger, bolder tabs
+    st.markdown("""
+    <style>
+        /* Increase font size and make tabs bold */
+        button[data-baseweb="tab"] {
+            font-size: 24px !important;
+            font-weight: bold !important;
+        }
+        /* Fallback for Markdown inside Tab buttons */
+        button[data-baseweb="tab"] div p {
+            font-size: 24px !important;
+            font-weight: bold !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    
     st.title("🕹️ Control Engineering Dashboard")
 
     # Session State Initialization
@@ -309,7 +347,12 @@ def main():
     if 'tn' not in st.session_state: st.session_state.tn = 10.0
     if 'tv' not in st.session_state: st.session_state.tv = 1.0
 
-    tab1, tab2, tab3 = st.tabs(["🏗️ Plant Model", "📈 Oscillation Tuning", "🚀 PID Test"])
+    # Define Tabs
+    tab1, tab2, tab3 = st.tabs([
+        "1. 🏗️ Plant Model", 
+        "2. 📈 Oscillation Tuning", 
+        "3. 🚀 PID Test"
+    ])
 
     # ----------------------------------------------------
     # TAB 1: MODEL
@@ -318,18 +361,19 @@ def main():
         with st.sidebar:
             st.header("1. Plant Parameters")
             
-            m_order = st.selectbox("System Order", ["PT1", "PT2", "PT3"], index=1)
-            m_v = st.slider("Gain (K)", 0.1, 10.0, 2.8, 0.1)
-            m_t = st.slider("Time Constant (T)", 0.1, 20.0, 2.0, 0.1)
+            m_order = st.selectbox("System Order", ["PT1", "PT2", "PT3"], index=1, key="m_order")
+            m_v = st.slider("Gain (K)", 0.1, 10.0, 2.8, 0.1, key="m_v")
+            m_t = st.slider("Time Constant (T)", 0.1, 20.0, 2.0, 0.1, key="m_t")
             
             if m_order == "PT2":
-                m_xi = st.slider("Damping Ratio (D)", 0.1, 3.0, 1.5)
+                m_xi = st.slider("Damping Ratio (D)", 0.1, 3.0, 1.5, key="m_xi")
             else:
                 m_xi = 1.0
+                st.session_state.m_xi = 1.0
             
-            m_delay = st.slider("Dead Time [s]", 0.0, 10.0, 2.0)
+            m_delay = st.slider("Dead Time [s]", 0.0, 10.0, 2.0, key="m_delay")
             st.divider()
-            m_noise_amp = st.slider("Measurement Noise (Amp)", 0.0, 1.0, 0.0, 0.01)
+            m_noise_amp = st.slider("Measurement Noise (Amp)", 0.0, 1.0, 0.0, 0.01, key="m_noise_amp")
 
         model_params = {
             "order": m_order, "gain": m_v, "time_const": m_t,
@@ -338,7 +382,7 @@ def main():
 
         st.markdown(f"### Model Preview: {m_order} with {m_delay}s Dead Time")
         
-        # Open Loop Step Response Calculation
+        # Calculate Open Loop Step Response
         t_open = np.linspace(0, 200 + m_delay, 1000)
         dt_o = t_open[1] - t_open[0]
         nd_o = int(max(1, np.ceil(m_delay / dt_o)))
@@ -350,13 +394,24 @@ def main():
             rb_o[idx_o] = 1.0 # Unit Step
             idx_o = (idx_o + 1) % nd_o
             step_o = odeint(system_dynamics, curr_o, [0, dt_o], args=(u_del, m_v, m_t, m_xi, m_order))
-            pv_o.append(step_o[-1, 0])
+            
+            # Add Noise
+            noise = np.random.normal(0, m_noise_amp) if m_noise_amp > 0 else 0.0
+            pv_o.append(step_o[-1, 0] + noise)
+            
             curr_o = step_o[-1]
         
+        # Store Model Data for CSV Export
+        df_model = pd.DataFrame({
+            "Time": t_open,
+            "Step_Response": pv_o
+        })
+        st.session_state['data_model'] = df_model
+
         fig_open = go.Figure()
-        fig_open.add_trace(go.Scatter(x=t_open, y=pv_o, name="Step Response", line=dict(color='#00CC96', width=3)))
+        fig_open.add_trace(go.Scatter(x=t_open, y=pv_o, name="Step Response", line=dict(color='#00CC96', width=2)))
         fig_open.update_layout(
-            title="Open Loop Step Response", 
+            title="Open Loop Step Response (with Noise Preview)", 
             xaxis_title="Time [s]", yaxis_title="Output y(t)",
             template="plotly_dark", height=600
         )
@@ -369,25 +424,25 @@ def main():
         with st.sidebar:
             st.header("2. Autotuning Setup")
             
-            t_mode_sel = st.selectbox("Algorithm", options=[1, 2, 3], 
+            t_mode_sel = st.selectbox("Algorithm", options=[1, 2, 3], index=2,
                                       format_func=lambda x: {
                                           1: "Phase 1 Only (Fast)", 
                                           2: "Symmetric (Phase 1+2)", 
                                           3: "Automatic (Smart)"
-                                      }[x])
+                                      }[x], key="t_mode_sel")
             
             if t_mode_sel == 3:
-                t_min_qual = st.slider("Min. Symmetry Quality [%]", 50, 100, 95)
+                t_min_qual = st.slider("Min. Symmetry Quality [%]", 50, 100, 95, key="t_min_qual")
             else:
                 t_min_qual = 95.0
 
             st.divider()
             st.markdown("**Relay Parameters**")
-            t_set = st.number_input("Setpoint (Operating Point)", value=150.0)
-            t_hyst = st.number_input("Hysteresis", value=1.0)
-            t_max = st.number_input("Relay Max", value=100.0)
-            t_min = st.number_input("Relay Min", value=-100.0)
-            t_periods = st.slider("Required Periods", 2, 10, 4)
+            t_set = st.number_input("Setpoint (Operating Point)", value=150.0, key="t_set")
+            t_hyst = st.number_input("Hysteresis", value=1.0, key="t_hyst")
+            t_max = st.number_input("Relay Max", value=100.0, key="t_max")
+            t_min = st.number_input("Relay Min", value=-100.0, key="t_min")
+            t_periods = st.slider("Required Periods", 2, 10, 4, key="t_periods")
 
         st.subheader("Autotuning Simulation")
         start_tuning = st.button("▶️ Start Tuning", type="primary")
@@ -431,14 +486,23 @@ def main():
                 if tuner.tuning_done: break
             
             progress_bar.progress(100)
+            
+            # Store Tuning Data for CSV Export
+            t_axis = np.arange(len(y_hist)) * Ts
+            df_tuning = pd.DataFrame({
+                "Time": t_axis,
+                "Process_Value": y_hist,
+                "Setpoint": [t_set]*len(y_hist),
+                "Output": u_hist
+            })
+            st.session_state['data_tuning'] = df_tuning
 
             # Store results in session state
             st.session_state.kp = tuner.kp
             st.session_state.tn = tuner.tn
             st.session_state.tv = tuner.tv
-            st.session_state.t_set = t_set
-
-            # Metrics for tuning quality and results
+            
+            # Metrics
             c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric("Recommended Kp", f"{tuner.kp:.3f}")
             c2.metric("Recommended Tn", f"{tuner.tn:.3f}s")
@@ -455,9 +519,8 @@ def main():
             final_delta = "Good" if final_qual > 90 else "Low"
             c5.metric("Phase 2 Quality", f"{final_qual:.1f}%", delta=final_delta)
 
-            # Tuning Plot
+            # Plot
             fig_t = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3])
-            t_axis = np.arange(len(y_hist)) * Ts
             fig_t.add_trace(go.Scatter(x=t_axis, y=y_hist, name="Process Value (PV)", line=dict(color='cyan')), row=1, col=1)
             fig_t.add_trace(go.Scatter(x=t_axis, y=[t_set]*len(t_axis), name="Setpoint (SP)", line=dict(dash='dash', color='red')), row=1, col=1)
             fig_t.add_trace(go.Scatter(x=t_axis, y=u_hist, name="Relay (OP)", line=dict(shape='hv', color='orange')), row=2, col=1)
@@ -471,7 +534,7 @@ def main():
         with st.sidebar:
             st.header("3. Controller Test")
             
-            use_tuned = st.checkbox("Use Tuned Parameters", value=True)
+            use_tuned = st.checkbox("Use Tuned Parameters", value=True, key="use_tuned")
             
             st.markdown("---")
             st.markdown("**PID Parameters**")
@@ -480,18 +543,19 @@ def main():
             def_tn = st.session_state.tn if use_tuned else 5.0
             def_tv = st.session_state.tv if use_tuned else 0.0
 
-            rk_type = st.selectbox("Controller Type", ["PID", "PI", "P", "PD"], index=0)
+            rk_type = st.selectbox("Controller Type", ["PID", "PI", "P", "PD"], index=0, key="rk_type")
             
-            rk_p = st.number_input("Kp (Gain)", value=def_kp, format="%.4f")
-            rk_n = st.number_input("Tn (Reset Time)", value=def_tn, format="%.4f")
-            rk_v = st.number_input("Tv (Derivative Time)", value=def_tv, format="%.4f")
+            rk_p = st.number_input("Kp (Gain)", value=def_kp, format="%.4f", key="rk_p")
+            rk_n = st.number_input("Tn (Reset Time)", value=def_tn, format="%.4f", key="rk_n")
+            rk_v = st.number_input("Tv (Derivative Time)", value=def_tv, format="%.4f", key="rk_v")
+            
             rk_tf = rk_v / 10.0 if rk_v > 0 else 0.0
             
             st.markdown("---")
             st.markdown("**Simulation Settings**")
             rk_aw = "ON"
-            m_sim_time = st.slider("Duration [s]", 10, 500, 200)
-            step_val = st.number_input("Setpoint Step Value", value=st.session_state.get('t_set', 150.0))
+            m_sim_time = st.slider("Duration [s]", 10, 500, 200, key="m_sim_time")
+            step_val = st.number_input("Setpoint Step Value", value=st.session_state.get('t_set', 150.0), key="step_val")
             
         st.subheader("Closed-Loop Control Performance")
         start_sim = st.button("🚀 Simulate Step Response", type="primary")
@@ -508,7 +572,16 @@ def main():
             
             pv, op, _, _, _, _ = simulate_pid_response(t_p, model_params, pid_conf)
             
-            # Performance Analysis
+            # Store PID Data for CSV Export
+            df_pid = pd.DataFrame({
+                "Time": t_p,
+                "Process_Value": pv[:,0],
+                "Setpoint": sp_vector,
+                "Output": op
+            })
+            st.session_state['data_pid'] = df_pid
+
+            # Analysis
             max_pv = np.max(pv[:, 0])
             overshoot = (max_pv - step_val) / step_val * 100 if max_pv > step_val else 0.0
             
@@ -517,7 +590,7 @@ def main():
             res2.metric("Steady-State Value", f"{pv[-1, 0]:.2f}")
             res3.metric("Control Deviation (Static)", f"{step_val - pv[-1, 0]:.4f}")
 
-            # Performance Plot
+            # Plot
             fig_pid = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1,
                                     subplot_titles=("Process Value (PV) vs Setpoint (SP)", "Output Power (OP)"),
                                     row_heights=[0.6, 0.4])
@@ -528,6 +601,81 @@ def main():
             
             fig_pid.update_layout(height=700, template="plotly_dark", xaxis2_title="Time [s]")
             st.plotly_chart(fig_pid, use_container_width=True)
-    
+
+    # ----------------------------------------------------
+    # NEW FEATURE: GLOBAL CSV EXPORT
+    # ----------------------------------------------------
+    st.markdown("---")
+    st.subheader("📥 Export Data (CSV)")
+
+    # Check if we have any data to export
+    has_model_data = 'data_model' in st.session_state
+    has_tuning_data = 'data_tuning' in st.session_state
+    has_pid_data = 'data_pid' in st.session_state
+
+    if not (has_model_data or has_tuning_data or has_pid_data):
+        st.info("Run a simulation (Model, Tuning, or PID Test) to enable CSV export.")
+    else:
+        # Create a combined dataframe for download
+        # Since time scales differ, we concat them side-by-side with prefixes
+        frames = []
+        
+        if has_model_data:
+            df_m = st.session_state['data_model'].copy()
+            df_m.columns = ["Model_" + c for c in df_m.columns]
+            frames.append(df_m)
+            
+        if has_tuning_data:
+            df_t = st.session_state['data_tuning'].copy()
+            df_t.columns = ["Tuning_" + c for c in df_t.columns]
+            frames.append(df_t)
+            
+        if has_pid_data:
+            df_p = st.session_state['data_pid'].copy()
+            df_p.columns = ["PID_" + c for c in df_p.columns]
+            frames.append(df_p)
+        
+        # Concat along axis 1 (side by side). Missing rows will be NaN.
+        master_df = pd.concat(frames, axis=1)
+        
+        csv_data = master_df.to_csv(index=False).encode('utf-8')
+        
+        st.download_button(
+            label="Download All Plot Data (.csv)",
+            data=csv_data,
+            file_name="sim_results_master.csv",
+            mime="text/csv"
+        )
+
+    # ----------------------------------------------------
+    # SIDEBAR SAVE/LOAD
+    # ----------------------------------------------------
+    with st.sidebar:
+        st.markdown("---")
+        st.header("💾 File Operations")
+        
+        keys_to_save = [
+            "m_order", "m_v", "m_t", "m_xi", "m_delay", "m_noise_amp", 
+            "t_mode_sel", "t_min_qual", "t_set", "t_hyst", "t_max", "t_min", "t_periods", 
+            "use_tuned", "rk_type", "rk_p", "rk_n", "rk_v", "m_sim_time", "step_val", 
+            "kp", "tn", "tv" 
+        ]
+        
+        # Save Configuration
+        current_config = {k: st.session_state[k] for k in keys_to_save if k in st.session_state}
+        json_string = json.dumps(current_config, indent=2)
+        
+        st.download_button(
+            label="📥 Save Configuration (JSON)",
+            data=json_string,
+            file_name="pid_config.json",
+            mime="application/json"
+        )
+        
+        # Load Configuration
+        st.file_uploader("📤 Load Configuration", type=["json"], 
+                         key="uploader_key", 
+                         on_change=load_config_callback)
+
 if __name__ == "__main__":
     main()
