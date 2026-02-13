@@ -464,7 +464,7 @@ def main():
             st.header("2. Autotuning Setup")
             t_mode_sel = st.selectbox("Algorithm", options=[1, 2, 3], index=1,
                                       format_func=lambda x: {1: "Phase 1 Only", 2: "Symmetric", 3: "Automatic"}[x], key="t_mode_sel")
-            if t_mode_sel == 3: t_min_qual = st.slider("Min. Symmetry Quality [%]", 50, 100, 95, key="t_min_qual")
+            if t_mode_sel == 3: t_min_qual = st.slider("Min. Symmetry Quality [%]", 50, 100, 80, key="t_min_qual")
             else: t_min_qual = 95.0
             st.divider()
             t_set = st.number_input("Setpoint", value=150.0, key="t_set")
@@ -477,7 +477,7 @@ def main():
         start_tuning = st.button("▶️ Start Tuning", type="primary")
 
         if start_tuning:
-            Ts = 0.05
+            Ts = 0.05 
             t_sim = np.arange(0, 1000, Ts) 
             tuner = OscillationTuning(Ts, t_set, t_min, t_max, t_periods, t_hyst, t_mode_sel, t_min_qual)
             
