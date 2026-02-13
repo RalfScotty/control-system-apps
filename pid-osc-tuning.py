@@ -351,7 +351,7 @@ def load_config_callback():
 # ==========================================
 
 def main():
-    st.set_page_config(page_title="PID Tuner Ultimate", layout="wide")
+    st.set_page_config(page_title="PID Control - Oscillation Tuning", layout="wide")
     
     st.markdown("""
     <style>
@@ -360,7 +360,7 @@ def main():
     </style>
     """, unsafe_allow_html=True)
     
-    st.title("🕹️ PID Control - Oscillation Tuning")
+    st.title("🕹️ Control Engineering Dashboard")
 
     if 'kp' not in st.session_state: st.session_state.kp = 2.0
     if 'tn' not in st.session_state: st.session_state.tn = 10.0
@@ -385,13 +385,13 @@ def main():
             
             m_order = st.selectbox("System Structure", ["1st Order System", "2nd Order System", "3rd Order System"], index=1, key="m_order")
             
-            m_v = st.slider("Gain (K)", 0.1, 10.0, 2.7, 0.1, key="m_v")
+            m_v = st.slider("Gain (K)", 0.1, 10.0, 2.0, 0.1, key="m_v")
             m_integrator = False
             
             # Dynamic Sliders based on Order
             time_consts = []
             
-            m_t1 = st.slider("Time Constant 1 (T1)", 0.1, 20.0, 2.0, 0.1, key="m_t1")
+            m_t1 = st.slider("Time Constant 1 (T1)", 0.1, 20.0, 10.0, 0.1, key="m_t1")
             time_consts.append(m_t1)
             
             # Integrator only available for 1st order
@@ -406,7 +406,7 @@ def main():
                 m_t3 = st.slider("Time Constant 3 (T3)", 0.1, 20.0, 0.5, 0.1, key="m_t3")
                 time_consts.append(m_t3)
             
-            m_delay = st.slider("Dead Time [s]", 0.0, 10.0, 0.5, key="m_delay")
+            m_delay = st.slider("Dead Time [s]", 0.0, 10.0, 0.0, key="m_delay")
             st.divider()
             m_noise_amp = st.slider("Measurement Noise (Amp)", 0.0, 1.0, 0.0, 0.01, key="m_noise_amp")
 
@@ -462,9 +462,9 @@ def main():
     with tab2:
         with st.sidebar:
             st.header("2. Autotuning Setup")
-            t_mode_sel = st.selectbox("Algorithm", options=[1, 2, 3], index=1,
+            t_mode_sel = st.selectbox("Algorithm", options=[1, 2, 3], index=2,
                                       format_func=lambda x: {1: "Phase 1 Only", 2: "Symmetric", 3: "Automatic"}[x], key="t_mode_sel")
-            if t_mode_sel == 3: t_min_qual = st.slider("Min. Symmetry Quality [%]", 50, 100, 80, key="t_min_qual")
+            if t_mode_sel == 3: t_min_qual = st.slider("Min. Symmetry Quality [%]", 50, 100, 95, key="t_min_qual")
             else: t_min_qual = 95.0
             st.divider()
             t_set = st.number_input("Setpoint", value=150.0, key="t_set")
@@ -474,10 +474,11 @@ def main():
             t_periods = st.slider("Required Periods", 2, 10, 4, key="t_periods")
 
         st.subheader("Autotuning Simulation")
+        
         start_tuning = st.button("▶️ Start Tuning", type="primary")
 
         if start_tuning:
-            Ts = 0.05 
+            Ts = 0.05
             t_sim = np.arange(0, 1000, Ts) 
             tuner = OscillationTuning(Ts, t_set, t_min, t_max, t_periods, t_hyst, t_mode_sel, t_min_qual)
             
@@ -562,6 +563,7 @@ def main():
             step_val = st.number_input("Step Value", value=st.session_state.get('t_set', 150.0), key="step_val")
 
         st.subheader("Closed-Loop Control Performance")
+        
         if st.button("🚀 Simulate Step Response", type="primary"):
             t_p = np.linspace(0, m_sim_time, int(m_sim_time * 20))
             sp_vector = np.ones(len(t_p)) * step_val
