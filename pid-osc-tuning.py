@@ -560,11 +560,6 @@ def main():
         3.  **Tab 3:** Parameters are automatically copied if 'Use Tuned Parameters' is checked. Click 'Simulate' to test.
         """)
 
-    # ----------------------------------------------------
-    # GLOBAL EXPORT & SAVE/LOAD
-    # ----------------------------------------------------
-    st.markdown("---")
-    st.subheader("📥 Export Data (CSV)")
     
     if any(k in st.session_state for k in ['data_model', 'data_tuning', 'data_pid']):
         frames = []
