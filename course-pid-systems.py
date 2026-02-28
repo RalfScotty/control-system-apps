@@ -19,10 +19,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def init_state(key, default_value):
+    """Safely initialize session state variables."""
     if key not in st.session_state:
         st.session_state[key] = default_value
 
-# State Initialization
+# Strict State Initialization (Must match selectbox options EXACTLY)
 init_state('sig_form', "Sine")
 init_state('sig_freq', 1.0)
 init_state('sig_amp', 5.0)
@@ -35,6 +36,7 @@ init_state('sys_param', 1.0)
 # --- 1. CALLBACKS ---
 # ==========================================
 def on_upload_callback():
+    """Robust callback for handling JSON config uploads."""
     if st.session_state.json_uploader is not None:
         try:
             data = json.load(st.session_state.json_uploader)
@@ -81,7 +83,7 @@ def simulate_system(config: SimConfig):
         noise = np.random.normal(0, config.noise_amp, len(t))
         y_in += noise
 
-    # 2. Apply 2nd-Order Butterworth System Logic
+    # 2. Apply 2nd-Order Butterworth System Logic using SOS for numerical stability
     y_out = np.zeros_like(y_in)
     
     # Normalize cutoff frequency for digital filters (0 to 1)
@@ -89,22 +91,27 @@ def simulate_system(config: SimConfig):
     normal_cutoff = safe_cutoff / nyq
 
     if "Low-pass" in config.sys_selection:
-        # Digital 2nd-Order Butterworth Low-pass
-        b, a = signal.butter(2, normal_cutoff, btype='low', analog=False)
-        y_out = signal.lfilter(b, a, y_in)
+        # SOS (Second-Order Sections) avoids precision collapse at low frequencies
+        sos = signal.butter(2, normal_cutoff, btype='low', analog=False, output='sos')
+        zi = signal.sosfilt_zi(sos) * y_in[0]  # Prevent startup transient jumps
+        y_out, _ = signal.sosfilt(sos, y_in, zi=zi)
         
     elif "High-pass" in config.sys_selection:
-        # Digital 2nd-Order Butterworth High-pass
-        b, a = signal.butter(2, normal_cutoff, btype='high', analog=False)
-        y_out = signal.lfilter(b, a, y_in)
+        sos = signal.butter(2, normal_cutoff, btype='high', analog=False, output='sos')
+        zi = signal.sosfilt_zi(sos) * y_in[0]  # Prevent startup transient jumps
+        y_out, _ = signal.sosfilt(sos, y_in, zi=zi)
         
     elif "All-pass" in config.sys_selection:
-        # Analog prototype for 2nd-order Butterworth All-pass, then discretized
+        # Analog prototype for 2nd-order Butterworth All-pass
         omega_c = 2 * np.pi * config.sys_parameter
         num = [1, -np.sqrt(2)*omega_c, omega_c**2]
         den = [1, np.sqrt(2)*omega_c, omega_c**2]
+        # Discretize
         d_num, d_den, _ = signal.cont2discrete((num, den), dt, method='bilinear')
-        y_out = signal.lfilter(d_num[0], d_den[0], y_in)
+        # Convert to SOS for stability and transient handling
+        sos = signal.tf2sos(d_num[0], d_den[0])
+        zi = signal.sosfilt_zi(sos) * y_in[0]
+        y_out, _ = signal.sosfilt(sos, y_in, zi=zi)
 
     return t, y_in, y_out
 
@@ -135,9 +142,9 @@ def main():
             
             st.header("2. Choose System")
             sys_options = [
-                "System 1:", 
-                "System 2:", 
-                "System 3:"
+                "System 1: Low-pass Filter", 
+                "System 2: High-pass Filter", 
+                "System 3: All-pass Filter"
             ]
             sys_sel = st.selectbox("Target System:", sys_options, key="sys_sel")
             
@@ -167,9 +174,13 @@ def main():
 
         # --- LOGIC EXECUTION ---
         config = SimConfig(
-            form=sig_form, frequency=sig_freq, amplitude=sig_amp, 
-            offset=sig_offset, noise_amp=sig_noise,
-            sys_selection=sys_sel, sys_parameter=sys_param
+            form=st.session_state.sig_form, 
+            frequency=st.session_state.sig_freq, 
+            amplitude=st.session_state.sig_amp, 
+            offset=st.session_state.sig_offset, 
+            noise_amp=st.session_state.sig_noise,
+            sys_selection=st.session_state.sys_sel, 
+            sys_parameter=st.session_state.sys_param
         )
         t, y_in, y_out = simulate_system(config)
 
@@ -178,10 +189,17 @@ def main():
         col1.metric("Input Peak (Max)", f"{np.max(y_in):.1f}")
         col2.metric("Output Peak (Max)", f"{np.max(y_out):.1f}")
         
-        # Calculate visual attenuation (approximate using max absolute values minus offset)
+        # Calculate visual attenuation accurately depending on filter type
         in_amp = np.max(np.abs(y_in - config.offset)) if config.amplitude > 0 else 1
-        out_amp = np.max(np.abs(y_out - (config.offset if "Low-pass" in config.sys_selection else 0)))
+        
+        if "High-pass" in config.sys_selection:
+            expected_out_offset = 0.0 # High-pass kills DC offset
+        else:
+            expected_out_offset = config.offset # Low-pass and All-pass preserve DC offset
+            
+        out_amp = np.max(np.abs(y_out - expected_out_offset))
         attenuation_percent = (1 - (out_amp / in_amp)) * 100
+        
         col3.metric("Signal Attenuation", f"{max(0, min(100, attenuation_percent)):.0f}%")
 
         st.markdown("---")
