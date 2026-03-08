@@ -23,7 +23,7 @@ def init_state(key, default_value):
     if key not in st.session_state:
         st.session_state[key] = default_value
 
-# Strict State Initialization (Must match selectbox options EXACTLY)
+# Strict State Initialization 
 init_state('sig_form', "Sine")
 init_state('sig_freq', 1.0)
 init_state('sig_amp', 5.0)
@@ -36,13 +36,19 @@ init_state('sys_param', 1.0)
 # --- 1. CALLBACKS ---
 # ==========================================
 def on_upload_callback():
-    """Robust callback for handling JSON config uploads."""
+    """Extremely robust callback for handling JSON config uploads in the Cloud."""
     if st.session_state.json_uploader is not None:
         try:
             data = json.load(st.session_state.json_uploader)
             for k, v in data.items():
                 if k in st.session_state:
-                    st.session_state[k] = v
+                    # Enforce type matching to prevent slider crashes in the Cloud
+                    if isinstance(st.session_state[k], float):
+                        st.session_state[k] = float(v)
+                    elif isinstance(st.session_state[k], int):
+                        st.session_state[k] = int(v)
+                    else:
+                        st.session_state[k] = str(v)
             st.toast("✅ Configuration loaded successfully!", icon="💾")
         except Exception as e:
             st.error(f"Error loading JSON file: {e}")
@@ -62,7 +68,7 @@ class SimConfig:
 
 @st.cache_data(show_spinner=False)
 def simulate_system(config: SimConfig):
-    # Fixed 3-second simulation for intuitive understanding of Hz
+    # Fixed 3-second simulation 
     dt = 0.001 
     fs = 1.0 / dt
     nyq = 0.5 * fs
@@ -83,7 +89,7 @@ def simulate_system(config: SimConfig):
         noise = np.random.normal(0, config.noise_amp, len(t))
         y_in += noise
 
-    # 2. Apply 2nd-Order Butterworth System Logic using SOS for numerical stability
+    # 2. Apply System Logic
     y_out = np.zeros_like(y_in)
     
     # Normalize cutoff frequency for digital filters (0 to 1)
@@ -91,27 +97,20 @@ def simulate_system(config: SimConfig):
     normal_cutoff = safe_cutoff / nyq
 
     if "Low-pass" in config.sys_selection:
-        # SOS (Second-Order Sections) avoids precision collapse at low frequencies
+        # 2nd-Order Butterworth Low-pass (SOS for stability, proper ZI for transient suppression)
         sos = signal.butter(2, normal_cutoff, btype='low', analog=False, output='sos')
-        zi = signal.sosfilt_zi(sos) * y_in[0]  # Prevent startup transient jumps
+        zi = signal.sosfilt_zi(sos) * y_in[0]
         y_out, _ = signal.sosfilt(sos, y_in, zi=zi)
         
     elif "High-pass" in config.sys_selection:
+        # 2nd-Order Butterworth High-pass
         sos = signal.butter(2, normal_cutoff, btype='high', analog=False, output='sos')
-        zi = signal.sosfilt_zi(sos) * y_in[0]  # Prevent startup transient jumps
-        y_out, _ = signal.sosfilt(sos, y_in, zi=zi)
-        
-    elif "All-pass" in config.sys_selection:
-        # Analog prototype for 2nd-order Butterworth All-pass
-        omega_c = 2 * np.pi * config.sys_parameter
-        num = [1, -np.sqrt(2)*omega_c, omega_c**2]
-        den = [1, np.sqrt(2)*omega_c, omega_c**2]
-        # Discretize
-        d_num, d_den, _ = signal.cont2discrete((num, den), dt, method='bilinear')
-        # Convert to SOS for stability and transient handling
-        sos = signal.tf2sos(d_num[0], d_den[0])
         zi = signal.sosfilt_zi(sos) * y_in[0]
         y_out, _ = signal.sosfilt(sos, y_in, zi=zi)
+        
+    elif "Non-linear" in config.sys_selection:
+        # System 3: Non-linear squarer (y = x^2)
+        y_out = y_in ** 2
 
     return t, y_in, y_out
 
@@ -133,7 +132,7 @@ def main():
         with st.sidebar:
             st.header("1. Choose Signal")
             sig_form = st.selectbox("Signal Shape:", ["Sine", "Square", "Sawtooth"], key="sig_form")
-            sig_freq = st.slider("Frequency (Hz)", 0.5, 100.0, step=0.5, key="sig_freq", help="How fast the signal oscillates.")
+            sig_freq = st.slider("Frequency (Hz)", 0.5, 20.0, step=0.5, key="sig_freq", help="How fast the signal oscillates.")
             sig_amp = st.slider("Amplitude", 1.0, 10.0, step=1.0, key="sig_amp", help="The height of the signal.")
             sig_offset = st.slider("DC Offset", -10.0, 10.0, step=0.5, key="sig_offset", help="Shifts the signal up or down.")
             sig_noise = st.slider("Sensor Noise", 0.0, 5.0, step=0.1, key="sig_noise", help="Adds random fluctuations.")
@@ -142,13 +141,17 @@ def main():
             
             st.header("2. Choose System")
             sys_options = [
-                "System 1:", 
-                "System 2:", 
-                "System 3:"
+                "System 1: Low-pass Filter", 
+                "System 2: High-pass Filter", 
+                "System 3: Non-linear (y = x²)"
             ]
             sys_sel = st.selectbox("Target System:", sys_options, key="sys_sel")
             
-            sys_param = st.slider("Cutoff Frequency (Hz)", 0.1, 20.0, step=0.1, key="sys_param")
+            # Context-sensitive UI: Hide filter cutoff for non-linear system
+            if "Non-linear" not in sys_sel:
+                sys_param = st.slider("Cutoff Frequency (Hz)", 0.1, 20.0, step=0.1, key="sys_param")
+            else:
+                sys_param = st.session_state.sys_param # Keep value in state but don't render slider
 
             st.divider()
             
@@ -160,7 +163,7 @@ def main():
             st.download_button(
                 label="📥 Export Config (JSON)", 
                 data=json.dumps(current_conf, indent=2), 
-                file_name="filter_system_config.json", 
+                file_name="system_config.json", 
                 mime="application/json",
                 use_container_width=True
             )
@@ -186,21 +189,9 @@ def main():
 
         # --- VISUAL FEEDBACK METRICS ---
         col1, col2, col3 = st.columns(3)
-        col1.metric("Input Peak (Max)", f"{np.max(y_in):.1f}")
-        col2.metric("Output Peak (Max)", f"{np.max(y_out):.1f}")
-        
-        # Calculate visual attenuation accurately depending on filter type
-        in_amp = np.max(np.abs(y_in - config.offset)) if config.amplitude > 0 else 1
-        
-        if "High-pass" in config.sys_selection:
-            expected_out_offset = 0.0 # High-pass kills DC offset
-        else:
-            expected_out_offset = config.offset # Low-pass and All-pass preserve DC offset
-            
-        out_amp = np.max(np.abs(y_out - expected_out_offset))
-        attenuation_percent = (1 - (out_amp / in_amp)) * 100
-        
-        col3.metric("Signal Attenuation", f"{max(0, min(100, attenuation_percent)):.0f}%")
+        col1.metric("Input Max", f"{np.max(y_in):.1f}")
+        col2.metric("Output Max", f"{np.max(y_out):.1f}")
+        col3.metric("Output Min", f"{np.min(y_out):.1f}")
 
         st.markdown("---")
 
@@ -212,10 +203,18 @@ def main():
         # Output: Solid Orange
         fig.add_trace(go.Scatter(x=t, y=y_out, mode='lines', name='Output (Processed)', line=dict(color='#FF9F1C', width=4)))
 
+        # Dynamic y-axis scaling to handle y=x^2 properly
+        y_max_abs = max(np.max(np.abs(y_in)), np.max(np.abs(y_out)))
+        y_range = [-y_max_abs * 1.1, y_max_abs * 1.1]
+        
+        # For squaring, the output is purely positive, we might need a better view
+        if "Non-linear" in config.sys_selection and config.offset == 0:
+            y_range = [min(-config.amplitude*1.1, -1), y_max_abs * 1.1]
+
         fig.update_layout(
             xaxis_title='Time (Seconds)', 
             yaxis_title='Amplitude',
-            yaxis_range=[-15, 15],
+            yaxis_range=y_range,
             template="plotly_dark",
             height=500,
             margin=dict(l=20, r=20, t=30, b=20),
@@ -236,44 +235,40 @@ def main():
             st.download_button(
                 label="📊 Download CSV Data",
                 data=csv,
-                file_name='filter_simulation_data.csv',
+                file_name='system_simulation_data.csv',
                 mime='text/csv',
                 use_container_width=True
             )
 
     with tab2:
-        st.header("📘 What happens here?")
+        st.header("📘 System Theory: Linear vs. Non-linear")
         st.markdown("""
-        All systems in this dashboard are designed as **2nd-Order Butterworth Filters**. This means their frequency response is mathematically optimized to be as flat as possible (no unwanted ripple effects), making them the gold standard in signal processing.
-        
-        * **🟢 System 1:** The "Smoother". It lets slow signals and constant offsets pass but aggressively blocks fast oscillations and noise. Since it's a 2nd-order filter, it cuts off high frequencies much steeper than a standard 1st-order RC filter.
-        * **🔵 System 2:** The "Edge Detector". It blocks slow/constant signals (like DC Offset) and only lets sudden changes (the sharp edges) jump through. 
-        * **🟣 System 3:** The "Shifter". The output peak is exactly as high as the input peak. However, different frequencies are shifted (delayed) by different amounts, which completely changes the *shape* of complex waves like squares or sawtooths.
+        * **🟢 System 1 (Low-pass Filter):** A 2nd-Order Butterworth filter. It lets slow signals and constant offsets pass but aggressively blocks fast oscillations and noise. It is a *linear* system.
+        * **🔵 System 2 (High-pass Filter):** A 2nd-Order Butterworth filter. It blocks slow/constant signals (like a DC Offset) and only lets sudden changes jump through. It is also a *linear* system.
+        * **🟣 System 3 (Non-linear squarer):** This system uses the math $y(t) = (x(t))^2$. It is **non-linear**. Unlike filters, which only change the amplitude and phase of existing frequencies, non-linear systems can create entirely *new* frequencies!
         """)
 
     with tab3:
         st.header("📝 Practical Exercises")
         st.markdown("Test your understanding! Adjust the parameters in **Tab 1** and observe how the output signal changes.")
 
-        with st.expander("🟢 System 1:"):
+        with st.expander("🟢 System 1: Low-pass Filter", expanded=True):
             st.markdown("""
-            * **Exercise 1 (Filtering Sensor Noise):** Set a **Sine** wave at **1.0 Hz** and add **1.5 Sensor Noise**. It looks chaotic! Now, drop the Cutoff Frequency to **2.0 Hz**. Notice how the filter magically recovers the clean sine wave from the noise.
-            * **Exercise 2 (Square Wave Smoothing):** Set the signal to **Square** at **1.0 Hz** (0 Noise). Set the Cutoff Frequency to **1.0 Hz**. Observe how the harsh corners are rounded off, transforming the rigid square into a smooth, sine-like wave.
-            * **Exercise 3 (High-Frequency Rejection):** Set a clean **Sine** wave to a high frequency (**5.0 Hz**). Drop the Cutoff Frequency to **1.0 Hz**. Notice how the orange output amplitude is almost completely flattened. The fast signal is effectively blocked!
+            * **Exercise 1 (Filtering Noise):** Set a **Sine** wave at **2.0 Hz** and add **1.5 Sensor Noise**. Drop the Cutoff Frequency to **3.0 Hz**. Notice how the filter magically recovers the clean sine wave from the noise.
+            * **Exercise 2 (Square Wave Smoothing):** Set the signal to **Square** at **1.0 Hz** (0 Noise). Set the Cutoff Frequency to **1.0 Hz**. Observe how the harsh corners are rounded off.
             """)
 
-        with st.expander("🔵 System 2:"):
+        with st.expander("🔵 System 2: High-pass Filter"):
             st.markdown("""
-            * **Exercise 1 (DC Offset Removal):** Set a **Sine** wave at **1.0 Hz** and add a **DC Offset of 5.0**. The green line shifts up. Now set the Cutoff Frequency to **0.5 Hz**. Observe how the orange output line perfectly ignores the offset and centers back around zero!
-            * **Exercise 2 (Edge Detection):** Select a **Square** wave at **1.0 Hz** (0 Offset). Set the Cutoff Frequency to **2.0 Hz**. See how the flat tops of the square wave immediately drop toward zero, leaving only sharp "spikes" exactly where the signal jumps.
-            * **Exercise 3 (Low-Frequency Blocking):** Set a slow **Sine** wave (**0.5 Hz**). Set the Cutoff Frequency to **5.0 Hz**. The output will be practically a flat line. The slow signal is blocked from passing.
+            * **Exercise 1 (DC Offset Removal):** Set a **Sine** wave at **1.0 Hz** and add a **DC Offset of 5.0**. Now set the Cutoff Frequency to **0.5 Hz**. Observe how the orange output line perfectly ignores the offset and centers back around zero!
+            * **Exercise 2 (Edge Detection):** Select a **Square** wave at **1.0 Hz** (0 Offset). Set the Cutoff Frequency to **5.0 Hz**. See how the flat tops drop toward zero, leaving only sharp spikes.
             """)
 
-        with st.expander("🟣 System 3:"):
+        with st.expander("🟣 System 3: Non-linear (y = x²)"):
             st.markdown("""
-            * **Exercise 1 (The Amplitude Check):** Set a **Sine** wave to **1.0 Hz**. Slowly drag the Cutoff Frequency slider from **0.1 Hz to 10.0 Hz**. Look at the "Signal Attenuation" metric. Notice how the amplitude *never* drops.
-            * **Exercise 2 (Phase Shift):** Keep the **Sine** wave at **1.0 Hz**. Set the Cutoff Frequency to exactly **1.0 Hz**. The output is shifted in time without losing its strength.
-            * **Exercise 3 (Sawtooth Distortion):** Change the signal to **Sawtooth** (**1.0 Hz**). Set the Cutoff Frequency to **2.0 Hz**. Even though no energy is blocked, the orange output shape looks wildly distorted! This happens because a sawtooth is made of many frequencies, and the All-pass delays each frequency by a *different* amount, ruining the original shape.
+            * **Exercise 1 (Frequency Doubling):** Set a **Sine** wave to **1.0 Hz**, Amplitude **2.0**, Offset **0.0**. Look at the orange line. It is purely positive (because negative x negative = positive) and it oscillates **twice as fast** as the input! Squaring a sine wave creates a new frequency.
+            * **Exercise 2 (The DC Converter):** Set a **Square** wave to **1.0 Hz**, Amplitude **3.0**, Offset **0.0**. The input jumps between +3 and -3. Since $(+3)^2 = 9$ and $(-3)^2 = 9$, the output is a perfectly flat DC line at 9.0!
+            * **Exercise 3 (Parabolic Shapes):** Change the signal to a **Sawtooth** wave. A sawtooth is a straight line. Squaring a straight line ($x$) gives a parabola ($x^2$). Look at the beautiful curved shapes at the output!
             """)
 
 if __name__ == "__main__":
