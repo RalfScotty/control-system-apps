@@ -4,6 +4,7 @@ from scipy.integrate import odeint
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
+import streamlit.components.v1 as _comp
 
 # ─── PAGE CONFIG ──────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Dynamic Systems", layout="wide", page_icon="⚙️")
@@ -417,6 +418,432 @@ def draw_hydraulic_schematic(d_tank: float, d_out: float,
     return _finalize(fig, sh, an, traces)
 
 
+# ─── HTML5 ANIMATIONS ─────────────────────────────────────────────────────────
+
+def _render_anim(html_str: str, height: int = 295) -> None:
+    """Render a canvas animation centred in the page."""
+    _, col, _ = st.columns([0.03, 0.94, 0.03])
+    with col:
+        _comp.html(html_str, height=height)
+
+
+def _anim_wrap(cid: str, w: int, h: int, js_vars: str, js_body: str) -> str:
+    """Wrap a canvas + IIFE script.  js_vars uses f-string; js_body is a plain
+    string so { } are safe.  The opening (function(){ is in the f-string header
+    (doubled braces) and the closing })(); is appended as a plain string."""
+    header = (
+        f'<style>body{{margin:0;padding:0;background:#0D1117}}</style>'
+        f'<canvas id="{cid}" width="{w}" height="{h}" '
+        f'style="display:block;margin:4px auto;border-radius:12px;'
+        f'box-shadow:0 4px 24px rgba(0,0,0,0.6)"></canvas>'
+        f'<script>(function(){{\n'
+    )
+    footer = '\n})();\n</script>'
+    return header + js_vars + '\n' + js_body + footer
+
+
+# ── RC Circuit animation ──────────────────────────────────────────────────────
+
+def rc_anim_html(t_arr: np.ndarray, uc_arr: np.ndarray,
+                 u_in: float, u0: float, tau: float, R: float, C: float) -> str:
+    n   = 200
+    ix  = np.round(np.linspace(0, len(t_arr) - 1, n)).astype(int)
+    t_j = json.dumps([round(float(x), 3) for x in t_arr[ix]])
+    u_j = json.dumps([round(float(x), 4) for x in uc_arr[ix]])
+
+    js_vars = (
+        f'const tArr={t_j};\nconst ucArr={u_j};\n'
+        f'const U_IN={u_in};const U0={u0};const TAU={tau};\n'
+        f'const R_V={R};const C_V={C};\n'
+    )
+
+    js_body = r"""
+const canvas=document.getElementById('rcA');if(!canvas)return;
+const ctx=canvas.getContext('2d');
+const W=canvas.width,H=canvas.height;
+const CYCLE=9000;let t0=null;
+// Circuit geometry
+const LX=72,RX=395,TY=66,BY=214,MX=233,CMY=140;
+const batR=27,capHH=22,rw=86;
+// Charge particles
+const NP=9;
+const pa=Array.from({length:NP},(_,i)=>i/NP);
+const pLen=2*((RX-LX)+(BY-TY));
+function pp(f){
+  f=((f%1)+1)%1;
+  const t=(RX-LX)/pLen,ri=(BY-TY)/pLen,b=(RX-LX)/pLen,l=1-t-ri-b;
+  if(f<t)return{x:LX+f/t*(RX-LX),y:TY};
+  const f2=f-t;if(f2<ri)return{x:RX,y:TY+f2/ri*(BY-TY)};
+  const f3=f2-ri;if(f3<b)return{x:RX-f3/b*(RX-LX),y:BY};
+  const f4=f3-b;return{x:LX,y:BY-f4/l*(BY-TY)};
+}
+function gUC(ms){const f=(ms%CYCLE)/CYCLE;return ucArr[Math.min(Math.floor(f*ucArr.length),ucArr.length-1)];}
+function gT(ms){const f=(ms%CYCLE)/CYCLE;return tArr[Math.min(Math.floor(f*tArr.length),tArr.length-1)];}
+function gl(x0,y0,x1,y1,c,bl,lw){
+  ctx.save();ctx.shadowColor=c;ctx.shadowBlur=bl;ctx.strokeStyle=c;ctx.lineWidth=lw||2.5;
+  ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke();ctx.restore();
+}
+function frame(ts){
+  if(!t0)t0=ts;
+  const ms=ts-t0,uc=gUC(ms),tC=gT(ms);
+  const rng=Math.abs(U_IN-U0)||0.001;
+  const iF=Math.max(0,Math.min(1,(U_IN-uc)/rng));
+  const cF=Math.max(0,Math.min(1,(uc-Math.min(U_IN,U0))/rng));
+  ctx.fillStyle='#0D1117';ctx.fillRect(0,0,W,H);
+  const lv=iF>0.03,wc=lv?'#2255AA':'#1A2A3A',wb=lv?10:0;
+  // wires
+  gl(LX,TY,MX-rw/2-1,TY,wc,wb);gl(MX+rw/2+1,TY,RX,TY,wc,wb);
+  gl(LX,BY,RX,BY,'#1A2A3A',0);
+  gl(RX,TY,RX,CMY-capHH-5,wc,wb*0.6);gl(RX,CMY+capHH+5,RX,BY,'#1A2A3A',0);
+  gl(LX,TY,LX,CMY-batR,'#1A2A3A',0);gl(LX,CMY+batR,LX,BY,'#1A2A3A',0);
+  // battery
+  ctx.save();ctx.shadowColor='#4466EE';ctx.shadowBlur=14;
+  ctx.strokeStyle='#5577EE';ctx.lineWidth=2.5;
+  ctx.beginPath();ctx.arc(LX,CMY,batR,0,Math.PI*2);ctx.stroke();
+  ctx.fillStyle='#88AAFF';ctx.font='bold 14px monospace';ctx.textAlign='center';
+  ctx.fillText('+',LX,CMY-7);ctx.fillText('\u2212',LX,CMY+14);
+  ctx.shadowBlur=0;ctx.fillStyle='#5577AA';ctx.font='10px monospace';
+  ctx.fillText(U_IN.toFixed(1)+'V',LX,CMY+37);ctx.restore();
+  // resistor
+  const rx0=MX-rw/2;
+  ctx.save();ctx.shadowColor='#FF9F1C';ctx.shadowBlur=lv?16:4;
+  ctx.fillStyle='rgba(255,159,28,0.1)';ctx.fillRect(rx0,TY-11,rw,22);
+  ctx.strokeStyle='#FF9F1C';ctx.lineWidth=1.5;ctx.strokeRect(rx0,TY-11,rw,22);
+  ctx.beginPath();ctx.moveTo(rx0+4,TY);
+  for(let i=0;i<11;i++)ctx.lineTo(rx0+8+i*7,(i%2===0?TY-7:TY+7));
+  ctx.lineTo(rx0+rw-4,TY);ctx.strokeStyle='#FFB84D';ctx.stroke();
+  ctx.fillStyle='#FF9F1C';ctx.font='10px monospace';ctx.textAlign='center';
+  ctx.fillText(R_V.toFixed(1)+'\u03a9',MX,TY-17);ctx.restore();
+  // capacitor plates + glow fill
+  const cpw=46;
+  ctx.save();ctx.shadowColor='#00E5A0';ctx.shadowBlur=6+cF*16;
+  if(cF>0.01){
+    const g=ctx.createLinearGradient(0,CMY-capHH,0,CMY+capHH);
+    g.addColorStop(0,'rgba(0,229,160,0)');
+    g.addColorStop(0.5,`rgba(0,229,160,${0.06+cF*0.38})`);
+    g.addColorStop(1,'rgba(0,229,160,0)');
+    ctx.fillStyle=g;ctx.fillRect(RX-cpw/2,CMY-capHH,cpw,capHH*2);
+  }
+  ctx.strokeStyle='#00E5A0';ctx.lineWidth=4;
+  ctx.beginPath();ctx.moveTo(RX-cpw/2,CMY-capHH);ctx.lineTo(RX+cpw/2,CMY-capHH);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(RX-cpw/2,CMY+capHH);ctx.lineTo(RX+cpw/2,CMY+capHH);ctx.stroke();
+  ctx.fillStyle='#00CC88';ctx.font='10px monospace';ctx.textAlign='left';
+  ctx.fillText(C_V.toFixed(1)+'F',RX+cpw/2+8,CMY-4);
+  ctx.fillText('U_C='+uc.toFixed(1)+'V',RX+cpw/2+8,CMY+14);ctx.restore();
+  // particles
+  const spd=iF*0.00007;
+  for(let i=0;i<NP;i++){
+    pa[i]=(pa[i]+spd)%1;const p=pp(pa[i]);const al=0.25+iF*0.75;
+    ctx.save();ctx.shadowColor=`rgba(80,190,255,${al})`;ctx.shadowBlur=9;
+    ctx.fillStyle=`rgba(110,215,255,${al})`;
+    ctx.beginPath();ctx.arc(p.x,p.y,3.4,0,Math.PI*2);ctx.fill();ctx.restore();
+  }
+  // right panel – voltage bars
+  const px=432,pw=W-px-8,py2=18,ph=H-28;
+  ctx.fillStyle='rgba(10,16,26,0.92)';
+  ctx.beginPath();ctx.roundRect(px,py2,pw,ph,10);ctx.fill();
+  ctx.fillStyle='#334455';ctx.font='11px monospace';ctx.textAlign='left';
+  ctx.fillText('Voltage',px+10,py2+18);
+  const bh=ph-54,bpy=py2+28,bw=54;
+  const cx1=px+18,cx2=px+pw-18-bw;
+  const maxV=Math.max(Math.abs(U_IN),Math.abs(U0),0.5);
+  // U_in
+  const uiH=bh*Math.min(Math.abs(U_IN)/maxV,1);
+  ctx.fillStyle='rgba(80,100,250,0.15)';ctx.fillRect(cx1,bpy,bw,bh);
+  ctx.save();ctx.shadowColor='#6B9FFF';ctx.shadowBlur=8;
+  ctx.fillStyle='rgba(99,110,250,0.65)';ctx.fillRect(cx1,bpy+bh-uiH,bw,uiH);ctx.restore();
+  ctx.fillStyle='#8899FF';ctx.font='bold 9px monospace';ctx.textAlign='center';
+  ctx.fillText('U_in',cx1+bw/2,bpy+bh+13);
+  ctx.fillText(U_IN.toFixed(1)+'V',cx1+bw/2,Math.max(bpy+bh-uiH-6,bpy+12));
+  // U_C
+  const ucH=bh*Math.min(Math.abs(uc)/maxV,1);
+  ctx.fillStyle='rgba(0,180,120,0.12)';ctx.fillRect(cx2,bpy,bw,bh);
+  ctx.save();ctx.shadowColor='#00E5A0';ctx.shadowBlur=ucH>5?14:2;
+  ctx.fillStyle=`rgba(0,229,160,${0.35+cF*0.5})`;ctx.fillRect(cx2,bpy+bh-ucH,bw,ucH);ctx.restore();
+  ctx.fillStyle='#00E5A0';ctx.font='bold 9px monospace';ctx.textAlign='center';
+  ctx.fillText('U_C',cx2+bw/2,bpy+bh+13);
+  ctx.fillText(uc.toFixed(1)+'V',cx2+bw/2,Math.max(bpy+bh-ucH-6,bpy+12));
+  // time
+  ctx.fillStyle='#334455';ctx.font='10px monospace';ctx.textAlign='right';
+  ctx.fillText('t='+tC.toFixed(1)+'s',px+pw-8,py2+ph-8);
+  ctx.fillText('\u03c4='+TAU.toFixed(1)+'s',px+pw-8,py2+ph-22);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+"""
+    return _anim_wrap('rcA', 680, 270, js_vars, js_body)
+
+
+# ── Spring-Mass-Damper animation ──────────────────────────────────────────────
+
+def smd_anim_html(t_arr: np.ndarray, x_pos: np.ndarray,
+                  x_ss: float, xi: float) -> str:
+    n    = 200
+    ix   = np.round(np.linspace(0, len(t_arr) - 1, n)).astype(int)
+    t_j  = json.dumps([round(float(x), 3) for x in t_arr[ix]])
+    xp_j = json.dumps([round(float(x), 5) for x in x_pos[ix]])
+    x_rng = float(max(np.max(np.abs(x_pos - x_ss)), 0.01))
+
+    js_vars = (
+        f'const tArr={t_j};\nconst xArr={xp_j};\n'
+        f'const X_SS={x_ss};const X_RNG={x_rng};const XI={xi};\n'
+    )
+
+    js_body = r"""
+const canvas=document.getElementById('smdA');if(!canvas)return;
+const ctx=canvas.getContext('2d');
+const W=canvas.width,H=canvas.height;
+const CYCLE=8000;let t0=null;
+// Layout
+const WALL_X=68,BASE_Y=H/2,MASS_W=72,MASS_H=88;
+const SPR_Y=BASE_Y-24,DMP_Y=BASE_Y+24;
+const SCALE=130; // px per X_RNG unit → mass travel ±SCALE px
+const REST_X=310; // canvas x of mass left-edge at x=x_ss
+// Trail
+const TRAIL=40;const trail=new Float32Array(TRAIL).fill(REST_X);
+let trailIdx=0;
+function getMassX(ms){
+  const f=(ms%CYCLE)/CYCLE;
+  const v=xArr[Math.min(Math.floor(f*xArr.length),xArr.length-1)];
+  return REST_X+(v-X_SS)/X_RNG*SCALE;
+}
+function drawSpring(x0,x1,y,col,blur){
+  const coils=7,seg=(x1-x0)/(coils*2+2),amp=13;
+  ctx.save();ctx.shadowColor=col;ctx.shadowBlur=blur;
+  ctx.strokeStyle=col;ctx.lineWidth=2.5;
+  ctx.beginPath();ctx.moveTo(x0,y);ctx.lineTo(x0+seg,y);
+  for(let i=0;i<coils*2;i++)ctx.lineTo(x0+seg+(i+1)*seg,y+(i%2===0?-amp:amp));
+  ctx.lineTo(x1,y);ctx.stroke();ctx.restore();
+}
+function drawDamper(x0,x1,y,col,blur){
+  const cylW=60,cylH=22,cylX=x0+14;
+  ctx.save();ctx.shadowColor=col;ctx.shadowBlur=blur;
+  ctx.strokeStyle=col;ctx.lineWidth=2;
+  // wall stub + rod in
+  ctx.beginPath();ctx.moveTo(x0,y);ctx.lineTo(cylX,y);ctx.stroke();
+  // cylinder body
+  ctx.fillStyle=`rgba(80,100,220,0.14)`;ctx.fillRect(cylX,y-cylH/2,cylW,cylH);
+  ctx.strokeRect(cylX,y-cylH/2,cylW,cylH);
+  // piston plate (moves with mass – clamped inside cylinder)
+  const pistonMaxX=cylX+cylW-8;
+  const pistonX=Math.min(Math.max(x1-14,cylX+8),pistonMaxX);
+  ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(pistonX,y-cylH/2+3);ctx.lineTo(pistonX,y+cylH/2-3);ctx.stroke();
+  // rod out to mass
+  ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(cylX+cylW,y);ctx.lineTo(x1,y);ctx.stroke();
+  ctx.restore();
+}
+function frame(ts){
+  if(!t0)t0=ts;
+  const ms=ts-t0,massX=getMassX(ms);
+  const tC=tArr[Math.min(Math.floor((ms%CYCLE)/CYCLE*tArr.length),tArr.length-1)];
+  trail[trailIdx%TRAIL]=massX;trailIdx++;
+  ctx.fillStyle='#0D1117';ctx.fillRect(0,0,W,H);
+  // wall
+  ctx.save();ctx.fillStyle='rgba(60,65,80,0.7)';ctx.fillRect(0,40,WALL_X,H-80);
+  for(let y=48;y<H-80;y+=18)ctx.strokeStyle='#444455',ctx.lineWidth=1,
+    ctx.beginPath(),ctx.moveTo(0,y),ctx.lineTo(WALL_X-2,y+14),ctx.stroke();
+  ctx.strokeStyle='#7788AA';ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(WALL_X,40);ctx.lineTo(WALL_X,H-40);ctx.stroke();
+  ctx.restore();
+  // ground line
+  ctx.save();ctx.strokeStyle='#1E2E3E';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(WALL_X,H-30);ctx.lineTo(W-20,H-30);ctx.stroke();
+  ctx.restore();
+  // trail (fading dots)
+  for(let i=0;i<TRAIL;i++){
+    const ti=(trailIdx-1-i+TRAIL*10)%TRAIL;
+    const tx=trail[ti]+MASS_W/2;const al=0.06*(TRAIL-i)/TRAIL;
+    ctx.fillStyle=`rgba(0,220,150,${al})`;
+    ctx.beginPath();ctx.arc(tx,BASE_Y,6,0,Math.PI*2);ctx.fill();
+  }
+  // spring + damper
+  const attachX=massX;
+  drawSpring(WALL_X,attachX,SPR_Y,'#FF9F1C',lv=>8);
+  drawDamper(WALL_X,attachX,DMP_Y,'#7788FF',6);
+  // spring label
+  ctx.fillStyle='#FF9F1C';ctx.font='10px monospace';ctx.textAlign='center';
+  ctx.fillText('spring',WALL_X+(attachX-WALL_X)/2,SPR_Y-22);
+  ctx.fillText('damper',WALL_X+(attachX-WALL_X)/2,DMP_Y+24);
+  // mass block with glow
+  ctx.save();ctx.shadowColor='#00E5A0';ctx.shadowBlur=18;
+  const g=ctx.createLinearGradient(massX,BASE_Y-MASS_H/2,massX+MASS_W,BASE_Y+MASS_H/2);
+  g.addColorStop(0,'rgba(0,200,130,0.35)');g.addColorStop(1,'rgba(0,120,80,0.25)');
+  ctx.fillStyle=g;ctx.fillRect(massX,BASE_Y-MASS_H/2,MASS_W,MASS_H);
+  ctx.strokeStyle='#00E5A0';ctx.lineWidth=2;ctx.strokeRect(massX,BASE_Y-MASS_H/2,MASS_W,MASS_H);
+  ctx.fillStyle='#00E5A0';ctx.font='bold 11px monospace';ctx.textAlign='center';
+  ctx.fillText('m',massX+MASS_W/2,BASE_Y+5);ctx.restore();
+  // force arrow
+  const arrowX=massX+MASS_W;
+  ctx.save();ctx.shadowColor='#FF4B4B';ctx.shadowBlur=10;
+  ctx.strokeStyle='#FF4B4B';ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(arrowX+4,BASE_Y);ctx.lineTo(arrowX+46,BASE_Y);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(arrowX+46,BASE_Y);ctx.lineTo(arrowX+30,BASE_Y-8);ctx.lineTo(arrowX+30,BASE_Y+8);ctx.closePath();
+  ctx.fillStyle='#FF4B4B';ctx.fill();ctx.restore();
+  // xi badge
+  const xiCol=XI<0.95?'#FF9F1C':(XI<=1.05?'#00E5A0':'#7788FF');
+  const xiLbl=XI<0.95?'underdamped':(XI<=1.05?'critically damped':'overdamped');
+  ctx.fillStyle=xiCol;ctx.font='bold 11px monospace';ctx.textAlign='left';
+  ctx.fillText('\u03be='+XI.toFixed(3)+'  '+xiLbl,WALL_X+6,28);
+  // x position indicator
+  const xCur=xArr[Math.min(Math.floor((ms%CYCLE)/CYCLE*xArr.length),xArr.length-1)];
+  ctx.fillStyle='#445566';ctx.font='10px monospace';ctx.textAlign='right';
+  ctx.fillText('x='+xCur.toFixed(4)+'m   t='+tC.toFixed(1)+'s',W-12,H-10);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+"""
+    return _anim_wrap('smdA', 680, 260, js_vars, js_body)
+
+
+# ── Hydraulic Tank animation ──────────────────────────────────────────────────
+
+def hydraulic_anim_html(t_arr: np.ndarray, h_arr: np.ndarray,
+                         h_ss: float, q_out_arr: np.ndarray, q0_lpm: float) -> str:
+    n      = 200
+    ix     = np.round(np.linspace(0, len(t_arr) - 1, n)).astype(int)
+    t_j    = json.dumps([round(float(x), 2) for x in t_arr[ix]])
+    h_j    = json.dumps([round(float(x), 5) for x in h_arr[ix]])
+    qo_j   = json.dumps([round(float(x), 3) for x in q_out_arr[ix]])
+    h_disp = float(max(h_ss * 1.25, float(np.max(h_arr)), 0.05))
+
+    js_vars = (
+        f'const tArr={t_j};\nconst hArr={h_j};\nconst qoArr={qo_j};\n'
+        f'const H_SS={h_ss};const H_DISP={h_disp};const Q0={q0_lpm};\n'
+    )
+
+    js_body = r"""
+const canvas=document.getElementById('htA');if(!canvas)return;
+const ctx=canvas.getContext('2d');
+const W=canvas.width,H=canvas.height;
+const CYCLE=12000;let t0=null,waveOff=0;
+// Tank bounds (canvas coords)
+const TX0=175,TX1=455,TY_BOT=225,TY_TOP=28;
+const TH=TY_BOT-TY_TOP,TW=TX1-TX0;
+// Bubbles
+const NB=14;
+const bub=Array.from({length:NB},(_,i)=>({
+  x:TX0+10+Math.random()*(TW-20),
+  y:TY_BOT-10-Math.random()*TH*0.6,
+  r:1.5+Math.random()*3,
+  vy:0.3+Math.random()*0.5
+}));
+// Drops
+const NDR=6;
+const drops=Array.from({length:NDR},(_,i)=>({
+  x:TX0+TW*0.65+i*8-20,
+  y:TY_TOP-30-i*18,
+  vy:1.5+Math.random()*1
+}));
+function getH(ms){const f=(ms%CYCLE)/CYCLE;return hArr[Math.min(Math.floor(f*hArr.length),hArr.length-1)];}
+function getQO(ms){const f=(ms%CYCLE)/CYCLE;return qoArr[Math.min(Math.floor(f*qoArr.length),qoArr.length-1)];}
+function getT(ms){const f=(ms%CYCLE)/CYCLE;return tArr[Math.min(Math.floor(f*tArr.length),tArr.length-1)];}
+function hToY(h){return TY_BOT-Math.min(h/H_DISP,1)*TH;}
+function frame(ts){
+  if(!t0)t0=ts;
+  const ms=ts-t0,h=getH(ms),qo=getQO(ms),tC=getT(ms);
+  waveOff=(waveOff+0.04)%(Math.PI*2);
+  ctx.fillStyle='#0D1117';ctx.fillRect(0,0,W,H);
+  const waterY=hToY(h);
+  // h_ss dashed line
+  if(H_SS>0.001){
+    const hssY=hToY(H_SS);
+    ctx.save();ctx.setLineDash([6,4]);ctx.strokeStyle='rgba(100,150,255,0.35)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(TX0-18,hssY);ctx.lineTo(TX1+18,hssY);ctx.stroke();
+    ctx.setLineDash([]);ctx.fillStyle='rgba(100,150,255,0.6)';ctx.font='9px monospace';ctx.textAlign='right';
+    ctx.fillText('h_ss',TX0-20,hssY+4);ctx.restore();
+  }
+  // water body gradient
+  if(waterY<TY_BOT-1){
+    const wg=ctx.createLinearGradient(TX0,waterY,TX0,TY_BOT);
+    wg.addColorStop(0,'rgba(20,110,220,0.22)');wg.addColorStop(1,'rgba(10,60,160,0.5)');
+    ctx.fillStyle=wg;ctx.fillRect(TX0+2,waterY,TW-4,TY_BOT-waterY);
+  }
+  // wave surface
+  if(waterY<TY_BOT-2){
+    ctx.save();ctx.shadowColor='rgba(80,180,255,0.6)';ctx.shadowBlur=6;
+    ctx.strokeStyle='rgba(80,180,255,0.8)';ctx.lineWidth=2;
+    ctx.beginPath();
+    for(let x=TX0;x<=TX1;x+=3){
+      const y=waterY+4*Math.sin((x-TX0)*0.08+waveOff)+2*Math.sin((x-TX0)*0.2-waveOff*1.3);
+      x===TX0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    }
+    ctx.stroke();ctx.restore();
+  }
+  // bubbles (only if water present)
+  if(h>0.01){
+    for(let i=0;i<NB;i++){
+      bub[i].y-=bub[i].vy;
+      if(bub[i].y<waterY+4){bub[i].y=TY_BOT-6;bub[i].x=TX0+10+Math.random()*(TW-20);}
+      const al=Math.min((TY_BOT-bub[i].y)/TH,1)*0.55;
+      ctx.save();ctx.shadowColor=`rgba(120,200,255,${al})`;ctx.shadowBlur=4;
+      ctx.strokeStyle=`rgba(150,220,255,${al})`;ctx.lineWidth=1;
+      ctx.beginPath();ctx.arc(bub[i].x,bub[i].y,bub[i].r,0,Math.PI*2);ctx.stroke();
+      ctx.restore();
+    }
+  }
+  // tank walls
+  ctx.save();ctx.shadowColor='#5588AA';ctx.shadowBlur=8;
+  ctx.strokeStyle='#6699BB';ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(TX0,TY_TOP);ctx.lineTo(TX0,TY_BOT);ctx.lineTo(TX1,TY_BOT);ctx.lineTo(TX1,TY_TOP);ctx.stroke();
+  ctx.restore();
+  // level scale (left)
+  ctx.fillStyle='#334455';ctx.font='9px monospace';ctx.textAlign='right';
+  for(let frac=0;frac<=1;frac+=0.25){
+    const sy=TY_BOT-frac*TH;const lv=(frac*H_DISP).toFixed(2);
+    ctx.strokeStyle='#223344';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(TX0-14,sy);ctx.lineTo(TX0-2,sy);ctx.stroke();
+    ctx.fillText(lv+'m',TX0-16,sy+4);
+  }
+  // current level arrow + label
+  const arY=Math.max(Math.min(hToY(h),TY_BOT-2),TY_TOP+2);
+  ctx.save();ctx.shadowColor='#4DAAFF';ctx.shadowBlur=10;
+  ctx.strokeStyle='#4DAAFF';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(TX1+4,arY);ctx.lineTo(TX1+22,arY);ctx.stroke();
+  ctx.fillStyle='#4DAAFF';ctx.font='bold 10px monospace';ctx.textAlign='left';
+  ctx.fillText('h='+h.toFixed(3)+'m',TX1+26,arY+4);ctx.restore();
+  // inlet pipe + drops
+  const inX=TX0+TW*0.65;
+  ctx.save();ctx.shadowColor='#00CC88';ctx.shadowBlur=8;
+  ctx.strokeStyle='#00CC88';ctx.lineWidth=5;
+  ctx.beginPath();ctx.moveTo(inX,TY_TOP);ctx.lineTo(inX,TY_TOP-35);ctx.stroke();
+  ctx.lineWidth=1;ctx.strokeStyle='#007755';
+  ctx.beginPath();ctx.moveTo(inX-12,TY_TOP-35);ctx.lineTo(inX+12,TY_TOP-35);ctx.stroke();
+  // drops
+  if(Q0>0.5){
+    for(let i=0;i<NDR;i++){
+      drops[i].y+=drops[i].vy;
+      if(drops[i].y>waterY)drops[i].y=TY_TOP-35-i*15;
+      ctx.shadowBlur=6;ctx.fillStyle='rgba(0,200,140,0.7)';
+      ctx.beginPath();ctx.ellipse(drops[i].x,drops[i].y,2,3.5,0,0,Math.PI*2);ctx.fill();
+    }
+  }
+  ctx.fillStyle='#00CC88';ctx.font='bold 9px monospace';ctx.textAlign='center';
+  ctx.fillText(Q0.toFixed(0)+' L/min',inX,TY_TOP-42);ctx.restore();
+  // outlet pipe + stream
+  const outX=TX0+TW*0.35;
+  ctx.save();ctx.shadowColor=qo>0.5?'#FF9F1C':'#334455';ctx.shadowBlur=qo>0.5?10:0;
+  ctx.strokeStyle=qo>0.5?'#FF9F1C':'#334455';ctx.lineWidth=5;
+  ctx.beginPath();ctx.moveTo(outX,TY_BOT);ctx.lineTo(outX,TY_BOT+32);ctx.stroke();
+  if(qo>0.5){
+    ctx.shadowBlur=8;ctx.lineWidth=2;
+    for(let i=0;i<4;i++){
+      const sy2=TY_BOT+8+i*8;const sw=2+i*1.2;
+      ctx.beginPath();ctx.moveTo(outX-sw,sy2);ctx.lineTo(outX+sw,sy2+5);ctx.stroke();
+    }
+    ctx.fillStyle='#FF9F1C';ctx.font='bold 9px monospace';ctx.textAlign='center';
+    ctx.fillText(qo.toFixed(1)+' L/min',outX,TY_BOT+52);
+  }
+  ctx.restore();
+  // time + flow label
+  ctx.fillStyle='#334455';ctx.font='10px monospace';ctx.textAlign='right';
+  ctx.fillText('t='+tC.toFixed(0)+'s',W-10,H-8);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+"""
+    return _anim_wrap('htA', 680, 290, js_vars, js_body)
+
+
 # ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 
 def render_sidebar() -> None:
@@ -573,6 +1000,9 @@ def render_rc_tab() -> None:
     # ── schematic ─────────────────────────────────────────────────────────────
     _centered_chart(draw_rc_schematic(R, C, u_in, u0))
 
+    # ── live animation ────────────────────────────────────────────────────────
+    _render_anim(rc_anim_html(t, uc, u_in, u0, tau, R, C), height=295)
+
     # ── metrics ───────────────────────────────────────────────────────────────
     idx_90 = np.argmin(np.abs(uc - (u0 + 0.9 * (uc_ss - u0)))) if abs(uc_ss - u0) > 1e-9 else 0
     c1, c2, c3 = st.columns(3)
@@ -633,6 +1063,9 @@ def render_smd_tab() -> None:
 
     # ── schematic ─────────────────────────────────────────────────────────────
     _centered_chart(draw_smd_schematic(m, k, c, F, xi))
+
+    # ── live animation ────────────────────────────────────────────────────────
+    _render_anim(smd_anim_html(t, x_pos, x_ss, xi), height=285)
 
     # ── regime badge ──────────────────────────────────────────────────────────
     overshoot = max(0.0, (float(np.max(x_pos)) - x_ss) / x_ss * 100.0) if x_ss > 1e-9 else 0.0
@@ -708,6 +1141,9 @@ def render_hydraulic_tab() -> None:
 
     # ── schematic ─────────────────────────────────────────────────────────────
     _centered_chart(draw_hydraulic_schematic(d_tank, d_out, q0, h_ss))
+
+    # ── live animation ────────────────────────────────────────────────────────
+    _render_anim(hydraulic_anim_html(t, h, h_ss, q_out_lpm, q0), height=315)
 
     # ── metrics ───────────────────────────────────────────────────────────────
     c1, c2, c3 = st.columns(3)
