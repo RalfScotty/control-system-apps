@@ -193,231 +193,6 @@ def _finalize(fig, shapes, annots, traces=None):
     return fig
 
 
-# ─── RC CIRCUIT SCHEMATIC ─────────────────────────────────────────────────────
-
-def draw_rc_schematic(R: float, C: float, u_in: float, u0: float) -> go.Figure:
-    fig, sh, an = _base_fig(310)
-    W = "#8899BB"
-    tau = R * C
-
-    # ── outer circuit wires ──────────────────────────────────────────────────
-    # bottom wire
-    sh.append(_L(2.0, 1.8, 14.0, 1.8, W, 2))
-    # left wire:  gap for voltage source (y 2.8 → 7.2)
-    sh += [_L(2.0, 1.8, 2.0, 2.8, W, 2), _L(2.0, 7.2, 2.0, 8.5, W, 2)]
-    # top wire: gap for resistor (x 5.5 → 10.5)
-    sh += [_L(2.0, 8.5, 5.5, 8.5, W, 2), _L(10.5, 8.5, 14.0, 8.5, W, 2)]
-    # right wire: gap for capacitor (y 3.5 → 6.5)
-    sh += [_L(14.0, 1.8, 14.0, 3.5, W, 2), _L(14.0, 6.5, 14.0, 8.5, W, 2)]
-
-    # ── voltage source ───────────────────────────────────────────────────────
-    sh.append(_C(2.0, 5.0, 2.2, "#4B7BFF", "rgba(30,60,180,0.15)", 2))
-    # plus/minus symbols
-    an += [
-        _A(2.0, 6.1, "＋", "#6B9FFF", 15, bold=True),
-        _A(2.0, 3.9, "－", "#6B9FFF", 15, bold=True),
-        _A(0.3, 5.0, f"{u_in:.1f} V", "#90B8FF", 12, "left"),
-        _A(2.0, 1.1, f"U_in", "#6699FF", 11),
-    ]
-
-    # ── resistor (zig-zag symbol inside rounded rect) ─────────────────────────
-    sh.append(_R(5.5, 7.9, 10.5, 9.1, "#FF9F1C", "rgba(255,159,28,0.12)", 2))
-    # resistor zigzag as Scatter trace
-    rx = np.linspace(5.6, 10.4, 16)
-    ry = np.array([8.5, 8.5, 9.0, 8.0, 9.0, 8.0, 9.0, 8.0,
-                   9.0, 8.0, 9.0, 8.0, 9.0, 8.0, 8.5, 8.5])
-    an.append(_A(8.0, 9.6, f"R = {R:.1f} Ω", "#FF9F1C", 13, bold=True))
-
-    # ── capacitor (two parallel plates) ──────────────────────────────────────
-    sh += [
-        _L(12.0, 3.5, 16.0, 3.5, "#00E5A0", 4),
-        _L(12.0, 6.5, 16.0, 6.5, "#00E5A0", 4),
-    ]
-    # fill between plates = dielectric
-    sh.append(_R(12.0, 3.5, 16.0, 6.5, "#00E5A0", "rgba(0,229,160,0.07)", 0))
-    an += [
-        _A(15.5, 5.0, f"C = {C:.1f} F", "#00E5A0", 13, "left", bold=True),
-        _A(14.0, 2.7, "U_C(t)", "#00E5A0", 12),
-    ]
-
-    # ── junction dots ─────────────────────────────────────────────────────────
-    for cx, cy in [(2.0, 1.8), (2.0, 8.5), (14.0, 1.8), (14.0, 8.5)]:
-        sh.append(_C(cx, cy, 0.18, W, W, 1))
-
-    # ── info bar ──────────────────────────────────────────────────────────────
-    an.append(_A(8.0, 0.5, f"τ = R · C = {tau:.1f} s  |  U₀ = {u0:.1f} V  →  U_ss = {u_in:.1f} V",
-                 "#667799", 11))
-
-    traces = [
-        go.Scatter(x=rx, y=ry, mode="lines",
-                   line=dict(color="#FF9F1C", width=2.5), showlegend=False,
-                   hoverinfo="skip"),
-    ]
-    return _finalize(fig, sh, an, traces)
-
-
-# ─── SPRING-MASS-DAMPER SCHEMATIC ─────────────────────────────────────────────
-
-def draw_smd_schematic(m: float, k: float, c: float, F: float, xi: float) -> go.Figure:
-    fig, sh, an = _base_fig(310)
-
-    # ── wall ─────────────────────────────────────────────────────────────────
-    sh.append(_R(0.3, 1.0, 1.0, 9.5, "#555566", "rgba(70,70,90,0.7)", 1))
-    for yw in np.arange(1.5, 9.5, 0.7):
-        sh.append(_L(0.3, yw, 1.0, yw + 0.55, "#777788", 1))
-    sh.append(_L(1.0, 1.0, 1.0, 9.5, "#9999BB", 3))
-
-    # ── spring (upper track, y=7.0) ───────────────────────────────────────────
-    # spring coils via Scatter trace
-    sx = np.linspace(1.0, 8.5, 60)
-    sy = np.zeros_like(sx)
-    sy[:3] = 7.0
-    sy[-3:] = 7.0
-    for i in range(3, 57):
-        t_norm = (i - 3) / 54.0
-        sy[i] = 7.0 + 0.55 * np.sin(t_norm * 2 * np.pi * 5)
-
-    sh += [
-        _L(1.0, 6.0, 1.0, 8.0, "#BBBBBB", 1),      # attach point on wall
-    ]
-    an.append(_A(4.75, 8.1, f"k = {k:.1f} N/m", "#FF9F1C", 12, bold=True))
-
-    # ── damper (lower track, y=3.5) ───────────────────────────────────────────
-    sh += [
-        _L(1.0, 3.0, 1.0, 4.0, "#BBBBBB", 1),      # attach point on wall
-        _L(1.0, 3.5, 3.8, 3.5, "#7788FF", 2),       # rod in
-        _R(3.8, 2.8, 7.2, 4.2, "#7788FF", "rgba(100,120,255,0.15)", 2),  # cylinder
-        _L(5.5, 3.1, 5.5, 3.9, "#7788FF", 3),        # piston plate
-        _L(5.5, 3.5, 8.5, 3.5, "#7788FF", 2),        # rod out
-    ]
-    an.append(_A(5.5, 2.0, f"c = {c:.1f} Ns/m", "#7788FF", 12, bold=True))
-
-    # ── connect spring and damper to mass ─────────────────────────────────────
-    sh += [
-        _L(8.5, 7.0, 8.5, 6.5, "#BBBBBB", 2),
-        _L(8.5, 3.5, 8.5, 4.5, "#BBBBBB", 2),
-    ]
-
-    # ── mass block ────────────────────────────────────────────────────────────
-    sh.append(_R(8.5, 4.5, 12.0, 6.5, "#00E5A0", "rgba(0,229,160,0.20)", 2))
-    an.append(_A(10.25, 5.5, f"m = {m:.1f} kg", "#00E5A0", 13, bold=True))
-
-    # ── force arrow ───────────────────────────────────────────────────────────
-    sh += [
-        _L(12.0, 5.5, 14.5, 5.5, "#FF4B4B", 3),
-        _L(14.5, 5.5, 13.6, 5.1, "#FF4B4B", 2),
-        _L(14.5, 5.5, 13.6, 5.9, "#FF4B4B", 2),
-    ]
-    an.append(_A(15.2, 5.5, f"F = {F:.0f} N", "#FF4B4B", 13, bold=True))
-
-    # ── x-axis label ──────────────────────────────────────────────────────────
-    sh.append(_L(8.5, 1.0, 12.0, 1.0, "#555566", 1))
-    an.append(_A(10.25, 0.4, "x(t)  →  displacement", "#667788", 11))
-
-    # ── xi badge ──────────────────────────────────────────────────────────────
-    xi_color = "#FF9F1C" if xi < 0.95 else ("#00E5A0" if xi <= 1.05 else "#7788FF")
-    regime   = "underdamped" if xi < 0.95 else ("critical" if xi <= 1.05 else "overdamped")
-    an.append(_A(8.0, 9.5, f"ξ = {xi:.3f}  ({regime})", xi_color, 12, bold=True))
-
-    traces = [
-        go.Scatter(x=sx, y=sy, mode="lines",
-                   line=dict(color="#FF9F1C", width=2.5), showlegend=False,
-                   hoverinfo="skip"),
-    ]
-    return _finalize(fig, sh, an, traces)
-
-
-# ─── HYDRAULIC TANK SCHEMATIC ─────────────────────────────────────────────────
-
-def draw_hydraulic_schematic(d_tank: float, d_out: float,
-                              q0_lpm: float, h_ss: float) -> go.Figure:
-    fig, sh, an = _base_fig(310)
-
-    # tank geometry (world coords)
-    tx0, tx1, ty0, ty1 = 4.5, 11.5, 1.5, 9.0
-    th = ty1 - ty0  # tank height in plot units
-
-    # water fill level: use h_ss for steady state, clamp to tank height
-    h_max_m    = 2.0   # physical max level [m] (HT_H0_MAX)
-    fill_frac  = min(h_ss / h_max_m, 1.0) if h_ss > 0.0 else 0.05
-    water_top  = ty0 + fill_frac * th
-
-    # ── background ────────────────────────────────────────────────────────────
-    sh.append(_R(tx0, ty0, tx1, ty1, "#223344", "rgba(10,20,35,0.6)", 0))
-
-    # ── water body ────────────────────────────────────────────────────────────
-    sh.append(_R(tx0 + 0.12, ty0, tx1 - 0.12, water_top,
-                 "#1E90FF", "rgba(30,100,210,0.30)", 0))
-
-    # ── tank walls ────────────────────────────────────────────────────────────
-    sh += [
-        _L(tx0, ty0, tx0, ty1, "#88AACC", 3),   # left
-        _L(tx1, ty0, tx1, ty1, "#88AACC", 3),   # right
-        _L(tx0, ty0, tx1, ty0, "#88AACC", 3),   # bottom
-    ]
-
-    # ── water surface (animated look) ─────────────────────────────────────────
-    wx = np.linspace(tx0 + 0.12, tx1 - 0.12, 40)
-    wy = water_top + 0.12 * np.sin(np.linspace(0, 2 * np.pi, 40))
-    sh.append(_L(tx0 + 0.12, water_top, tx1 - 0.12, water_top, "#4DAAFF", 2))
-    an.append(_A(tx1 + 0.4, water_top, f"h_ss = {h_ss:.3f} m", "#4DAAFF", 12, "left", bold=True))
-
-    # ── water level scale ─────────────────────────────────────────────────────
-    sh.append(_L(tx0 - 0.3, ty0, tx0 - 0.3, ty1, "#557799", 1))
-    for frac, label in [(0.0, "0"), (0.5, "1 m"), (1.0, "2 m")]:
-        yy = ty0 + frac * th
-        sh.append(_L(tx0 - 0.6, yy, tx0 - 0.3, yy, "#557799", 1))
-        an.append(_A(tx0 - 0.8, yy, label, "#557799", 10, "right"))
-
-    # ── inlet pipe (top) ──────────────────────────────────────────────────────
-    inlet_x = (tx0 + tx1) / 2 + 1.0
-    sh += [
-        _L(inlet_x, ty1, inlet_x, ty1 + 1.6, "#00CC88", 4),
-        _L(inlet_x - 0.8, ty1 + 1.6, inlet_x + 0.8, ty1 + 1.6, "#00CC88", 2),
-    ]
-    # Arrow down
-    sh += [
-        _L(inlet_x, ty1 + 0.3, inlet_x - 0.35, ty1 + 0.9, "#00CC88", 2),
-        _L(inlet_x, ty1 + 0.3, inlet_x + 0.35, ty1 + 0.9, "#00CC88", 2),
-    ]
-    an.append(_A(inlet_x, ty1 + 2.1, f"q_in = {q0_lpm:.0f} L/min", "#00CC88", 12, bold=True))
-
-    # ── outlet pipe (bottom) ──────────────────────────────────────────────────
-    out_x = (tx0 + tx1) / 2 - 1.0
-    sh += [
-        _L(out_x - 0.5, ty0, out_x - 0.5, ty0 - 1.5, "#FF9F1C", 3),
-        _L(out_x + 0.5, ty0, out_x + 0.5, ty0 - 1.5, "#FF9F1C", 3),
-        _L(out_x - 0.5, ty0 - 1.5, out_x + 0.5, ty0 - 1.5, "#FF9F1C", 2),
-    ]
-    # Arrow down
-    sh += [
-        _L(out_x, ty0 - 1.5, out_x - 0.35, ty0 - 0.8, "#FF9F1C", 2),
-        _L(out_x, ty0 - 1.5, out_x + 0.35, ty0 - 0.8, "#FF9F1C", 2),
-    ]
-    an += [
-        _A(out_x, ty0 - 2.05, f"d_out = {d_out*100:.1f} cm", "#FF9F1C", 12, bold=True),
-        _A(out_x, ty0 - 2.55, "q_out(t)  Torricelli", "#CC7700", 10),
-    ]
-
-    # ── tank label ────────────────────────────────────────────────────────────
-    an.append(_A((tx0 + tx1) / 2, ty1 + 0.5,
-                 f"d_tank = {d_tank*100:.0f} cm", "#88AACC", 11))
-
-    # ── wave surface trace ─────────────────────────────────────────────────────
-    traces = [
-        go.Scatter(x=wx, y=wy, mode="lines",
-                   line=dict(color="#4DAAFF", width=1.5), showlegend=False,
-                   hoverinfo="skip", fill="tozeroy",
-                   fillcolor="rgba(30,100,210,0.10)"),
-    ]
-
-    fig.update_layout(
-        yaxis=dict(range=[-1.5, 12], showgrid=False, showticklabels=False,
-                   zeroline=False, fixedrange=True),
-    )
-    return _finalize(fig, sh, an, traces)
-
-
 # ─── HTML5 ANIMATIONS ─────────────────────────────────────────────────────────
 
 def _render_anim(html_str: str, height: int = 295) -> None:
@@ -997,9 +772,6 @@ def render_rc_tab() -> None:
         "The resistor slows it down. How fast depends on **τ = R · C**."
     )
 
-    # ── schematic ─────────────────────────────────────────────────────────────
-    _centered_chart(draw_rc_schematic(R, C, u_in, u0))
-
     # ── live animation ────────────────────────────────────────────────────────
     _render_anim(rc_anim_html(t, uc, u_in, u0, tau, R, C), height=295)
 
@@ -1060,9 +832,6 @@ def render_smd_tab() -> None:
         "Apply a force to a mass on a spring. Does it bounce, or does the damper "
         "absorb the energy? The **damping ratio ξ** decides everything."
     )
-
-    # ── schematic ─────────────────────────────────────────────────────────────
-    _centered_chart(draw_smd_schematic(m, k, c, F, xi))
 
     # ── live animation ────────────────────────────────────────────────────────
     _render_anim(smd_anim_html(t, x_pos, x_ss, xi), height=285)
@@ -1138,9 +907,6 @@ def render_hydraulic_tab() -> None:
     A_tank     = np.pi * (d_tank / 2.0) ** 2
     A_out      = np.pi * (d_out  / 2.0) ** 2
     q_out_ss   = A_out * np.sqrt(2.0 * G * h_ss) * 60000.0
-
-    # ── schematic ─────────────────────────────────────────────────────────────
-    _centered_chart(draw_hydraulic_schematic(d_tank, d_out, q0, h_ss))
 
     # ── live animation ────────────────────────────────────────────────────────
     _render_anim(hydraulic_anim_html(t, h, h_ss, q_out_lpm, q0), height=315)
