@@ -414,8 +414,18 @@ def tab_exercises() -> None:
 - What is the gain in dB? What is the linear ratio?
 - What is the phase shift?
 - Move f_test to 0.2 Hz, then to 20 Hz. How do the metrics change?
+""")
+        with st.expander("💡 Solution", expanded=False):
+            st.markdown("""
+**How to get there:**
+At f_test = f_c the denominator of H(jω) is 1 + j·1 = 1 + j.
+Its magnitude is |1 + j| = √2, so |H| = 1/√2 ≈ **0.707** → **−3 dB**.
+The angle of (1 + j) is 45°, so the phase of H is **−45°**.
 
-**Expected:** Gain ≈ −3 dB (ratio ≈ 0.707), phase ≈ −45° at f_test = f_c.
+At f_test = 0.2 Hz (one decade below f_c): the filter barely acts — gain ≈ 0 dB, phase ≈ −6°.
+At f_test = 20 Hz (one decade above f_c): the signal is strongly attenuated — gain ≈ −20 dB, phase ≈ −84°.
+
+**Key rule:** Every decade above f_c adds roughly **−20 dB** and pushes phase towards −90°.
 """)
 
     with st.expander("🔵 Exercise 2 – Low-Pass vs. High-Pass (1st Order)", expanded=False):
@@ -428,6 +438,19 @@ def tab_exercises() -> None:
 - How does the phase sign differ?
 - At very low frequencies, which filter passes the signal? At very high frequencies?
 """)
+        with st.expander("💡 Solution", expanded=False):
+            st.markdown("""
+**How to get there:**
+Both filters share the same denominator (1 + jω/ωc), so their magnitude at f_c is identical: **−3 dB**.
+
+The phase differs because:
+- Low-pass: H = 1 / (1 + jω/ωc) → phase = **−45°** at f_c (output lags input)
+- High-pass: H = (jω/ωc) / (1 + jω/ωc) → phase = **+45°** at f_c (output leads input)
+
+At very low frequencies: the low-pass passes (gain → 0 dB), the high-pass blocks (gain → −∞ dB).
+At very high frequencies: the reverse — the high-pass passes, the low-pass blocks.
+Together they are **complementary**: LP + HP = 1 at every frequency.
+""")
 
     with st.expander("🟢 Exercise 3 – Steeper Roll-Off (2nd Order Low-Pass)", expanded=False):
         st.markdown("""
@@ -439,8 +462,23 @@ def tab_exercises() -> None:
 - How does the slope above f_n compare to the 1st order case?
 - Is the transition region wider or narrower?
 - Set f_test to 10 Hz, then 50 Hz. Compare the gain values between both filter types.
+""")
+        with st.expander("💡 Solution", expanded=False):
+            st.markdown("""
+**How to get there:**
+The slope in a Bode magnitude plot is determined by the **order** of the filter:
+- 1st order → −20 dB per decade above f_c
+- 2nd order → −40 dB per decade above f_n (two poles, twice the slope)
 
-**Expected:** 2nd order rolls off at −40 dB/decade vs. −20 dB/decade for 1st order.
+At f_test = 10 Hz (one decade above 5 Hz):
+- 1st order: ≈ −20 dB
+- 2nd order: ≈ −40 dB (10× more attenuation in amplitude terms)
+
+At f_test = 50 Hz (one decade further):
+- 1st order: ≈ −40 dB total
+- 2nd order: ≈ −80 dB total
+
+**Practical takeaway:** Use a 2nd order filter when you need to sharply separate frequencies that are close together.
 """)
 
     with st.expander("🟢 Exercise 4 – Phase Shift of 2nd Order Systems", expanded=False):
@@ -452,8 +490,20 @@ def tab_exercises() -> None:
 - What is the phase at very low frequencies?
 - What is the phase exactly at f_n?
 - What is the total phase shift range for a 2nd order low-pass?
+""")
+        with st.expander("💡 Solution", expanded=False):
+            st.markdown("""
+**How to get there:**
+The phase of H(jω) = ωn² / (ωn² − ω² + 2jξωnω) is the negative angle of the denominator.
 
-**Expected:** Phase goes from 0° → −90° at f_n → −180° — twice the range of a 1st order filter.
+- At very low ω: denominator ≈ ωn² (real, positive) → phase ≈ **0°**
+- At ω = ωn: denominator = 2jξωn² (purely imaginary) → phase = **−90°** exactly
+- At very high ω: denominator ≈ −ω² (real, negative) → phase → **−180°**
+
+Total range: **0° to −180°** — twice that of a 1st order filter (0° to −90°).
+
+This is why 2nd order systems can cause more timing issues in control loops:
+the output can lag the input by up to half a full cycle.
 """)
 
     with st.expander("🟢 Exercise 5 – 2nd Order High-Pass", expanded=False):
@@ -465,6 +515,20 @@ def tab_exercises() -> None:
 - Below f_n, how steeply does the gain fall off (dB per decade)?
 - At very high frequencies, what does the gain approach?
 - Compare the phase curve with the 2nd Order Low-Pass at the same f_n.
+""")
+        with st.expander("💡 Solution", expanded=False):
+            st.markdown("""
+**How to get there:**
+The 2nd order high-pass H = −ω² / (ωn² − ω² + 2jξωnω):
+
+- At low ω: numerator ∝ ω², denominator ≈ ωn² → gain ∝ (ω/ωn)² → **+40 dB/decade** rise below f_n, meaning **−40 dB/decade** fall when going down
+- At high ω: numerator ≈ −ω², denominator ≈ −ω² → H → **1** (0 dB) — all high frequencies pass unchanged
+
+The phase curve is the **mirror image** of the low-pass:
+- Low-pass: 0° → −90° → −180°
+- High-pass: +180° → +90° → 0°
+
+Both transition through ±90° at f_n, just in opposite directions.
 """)
 
     with st.expander("📐 Exercise 6 – Predicting the Output Signal", expanded=False):
@@ -479,6 +543,27 @@ def tab_exercises() -> None:
 Write the expected output y(t) as a formula using the values you read off.
 Verify it matches the time-domain plot.
 """)
+        with st.expander("💡 Solution", expanded=False):
+            st.markdown("""
+**How to get there:**
+For a 1st order low-pass at f_test = 3·f_c (i.e. ω/ωc = 3):
+
+1. Gain: |H| = 1 / √(1 + 3²) = 1/√10 ≈ **0.316** (linear), ≈ **−10 dB**
+2. Phase: φ = −arctan(3) ≈ **−71.6°** → in radians: ≈ −1.249 rad
+
+So the output formula is:
+
+> y(t) = 0.316 · sin(2π · 3 · t − 1.249)
+
+or equivalently in degrees notation:
+
+> y(t) = 0.316 · sin(2π · 3 · t − 71.6°)
+
+**General rule for any linear filter:**
+> y(t) = |H(j·2πf)| · sin(2π·f·t + ∠H(j·2πf))
+
+The frequency never changes — only amplitude and phase are modified.
+""")
 
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
@@ -487,7 +572,23 @@ def main() -> None:
     render_sidebar()
 
     st.title("📡 Frequency Response & Bode Plots")
-    st.caption("Explore how filters shape signals across frequencies.")
+
+    st.markdown("""
+This app shows how **filters** change the amplitude and phase of a sinusoidal signal depending on its frequency.
+
+Choose one of four filter types in the sidebar — **1st or 2nd order, low-pass or high-pass** — and set the
+characteristic frequency (f_c or f_n). Then pick a **test frequency** f_test and observe:
+
+| What you see | What it means |
+|---|---|
+| **Input & Output Signal** | How much the amplitude shrinks and how far the signal shifts in time |
+| **Bode Magnitude Plot** | The gain in dB across the full frequency range |
+| **Bode Phase Plot** | The phase shift in degrees across the full frequency range |
+
+The 🔴 orange marker shows exactly where your test frequency sits on the Bode curve.
+Use the **Explanation** tab for theory and formulas, and the **Exercises** tab for guided practice.
+""")
+    st.divider()
 
     tabs = st.tabs(["📊 Single Frequency", "📖 Explanation", "✏️ Exercises"])
     with tabs[0]:
