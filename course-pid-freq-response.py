@@ -429,13 +429,10 @@ The actual −3 dB point shifts with ξ.
 
 def tab_exercises() -> None:
     st.header("✏️ Exercises")
-    st.markdown("""
-Use the **sidebar** to set parameters and the **Single Frequency** tab to read results.
+    st.markdown("Use the **sidebar** to set parameters and the **Single Frequency** tab to read results.")
 
----
-
-#### Exercise 1 – The −3 dB Point (1st Order)
-
+    with st.expander("Exercise 1 – The −3 dB Point (1st Order)", expanded=True):
+        st.markdown("""
 1. Select **1st Order Low-Pass**, set f_c = 2 Hz.
 2. Set f_test = 2 Hz (equal to f_c).
 3. Read off the three metrics.
@@ -446,11 +443,10 @@ Use the **sidebar** to set parameters and the **Single Frequency** tab to read r
 - Move f_test to 0.2 Hz, then to 20 Hz. How do the metrics change?
 
 **Expected:** Gain ≈ −3 dB (ratio ≈ 0.707), phase ≈ −45° at f_test = f_c.
+""")
 
----
-
-#### Exercise 2 – Low-Pass vs. High-Pass
-
+    with st.expander("Exercise 2 – Low-Pass vs. High-Pass", expanded=False):
+        st.markdown("""
 1. Select **1st Order Low-Pass**, f_c = 2 Hz, f_test = 2 Hz.
 2. Switch to **1st Order High-Pass** (keep same parameters).
 
@@ -458,11 +454,10 @@ Use the **sidebar** to set parameters and the **Single Frequency** tab to read r
 - Is the gain the same for both types at f_test = f_c?
 - How does the phase sign differ?
 - At very low frequencies, which filter passes the signal? At very high?
+""")
 
----
-
-#### Exercise 3 – Resonance Peak (2nd Order Low-Pass)
-
+    with st.expander("Exercise 3 – Resonance Peak (2nd Order Low-Pass)", expanded=False):
+        st.markdown("""
 1. Select **2nd Order Low-Pass**, f_n = 5 Hz, ξ = 0.1.
 2. Sweep f_test from 1 Hz up to 5 Hz, watching the metrics.
 
@@ -470,11 +465,10 @@ Use the **sidebar** to set parameters and the **Single Frequency** tab to read r
 - Near which frequency is the gain highest?
 - Is the peak gain above 0 dB?
 - Set ξ = 1.0. Does the resonance peak disappear?
+""")
 
----
-
-#### Exercise 4 – Butterworth Condition
-
+    with st.expander("Exercise 4 – Butterworth Condition", expanded=False):
+        st.markdown("""
 1. Select **2nd Order Low-Pass**, f_n = 5 Hz, ξ = 0.707.
 2. Set f_test = f_n = 5 Hz.
 
@@ -484,11 +478,10 @@ Use the **sidebar** to set parameters and the **Single Frequency** tab to read r
 - Compare with ξ = 0.2 and ξ = 2.0.
 
 **Expected:** ξ = 0.707 gives no peak and gain = −3 dB at f_n.
+""")
 
----
-
-#### Exercise 5 – 2nd Order High-Pass Roll-Off
-
+    with st.expander("Exercise 5 – 2nd Order High-Pass Roll-Off", expanded=False):
+        st.markdown("""
 1. Select **2nd Order High-Pass**, f_n = 5 Hz, ξ = 0.3.
 2. Sweep f_test from 0.5 Hz to 50 Hz.
 
@@ -496,11 +489,10 @@ Use the **sidebar** to set parameters and the **Single Frequency** tab to read r
 - Where does the gain peak occur?
 - Below f_n, how steeply does the gain fall off (dB per decade)?
 - Set V = 2.0. How does the magnitude plot shift?
+""")
 
----
-
-#### Exercise 6 – Predicting the Output Signal
-
+    with st.expander("Exercise 6 – Predicting the Output Signal", expanded=False):
+        st.markdown("""
 1. Select **1st Order Low-Pass**, f_c = 1 Hz, f_test = 3 Hz.
 2. Note the **Gain [linear ratio]** and **Phase Shift** values.
 
