@@ -22,18 +22,18 @@ SYS_LABELS = [
     "2nd Order High-Pass",
 ]
 
-FC_MIN,  FC_MAX,  FC_STEP  = 0.01, 50.0, 0.01
-FN_MIN,  FN_MAX,  FN_STEP  = 0.1,  50.0, 0.1
-XI_MIN,  XI_MAX,  XI_STEP  = 0.05,  2.0, 0.05
-V_MIN,   V_MAX,   V_STEP   = 0.1,   5.0, 0.1
-FT_MIN,  FT_MAX,  FT_STEP  = 0.01, 100.0, 0.01
+FC_MIN, FC_MAX, FC_STEP = 0.01, 50.0, 0.01
+FN_MIN, FN_MAX, FN_STEP = 0.1,  50.0, 0.1
+FT_MIN, FT_MAX, FT_STEP = 0.01, 100.0, 0.01
+
+# Fixed internal parameters for 2nd order systems (not exposed to the user)
+XI_FIXED = 0.5   # moderate damping – clear roll-off, no resonance peak
+V_FIXED  = 1.0   # unity DC gain
 
 DEFAULTS: dict = {
     "sys_label": "1st Order Low-Pass",
     "f_c":       1.0,
     "f_n":       5.0,
-    "xi":        0.5,
-    "V":         1.0,
     "f_test_hz": 0.5,
 }
 
@@ -57,11 +57,7 @@ def safe_get(key: str):
     return st.session_state.get(key, DEFAULTS[key])
 
 
-def clamp(val, lo, hi):
-    return max(lo, min(hi, val))
-
-
-# ─── SHARED LAYOUT (no xaxis/yaxis – added per plot to avoid duplicate-kwarg error) ──
+# ─── SHARED LAYOUT ────────────────────────────────────────────────────────────
 _BASE = dict(
     paper_bgcolor=DARK,
     plot_bgcolor=DARK,
@@ -74,8 +70,7 @@ _AX = dict(gridcolor=GRID, zerolinecolor=GRID, linecolor=GRID)
 
 # ─── TRANSFER FUNCTION MATH ───────────────────────────────────────────────────
 def freq_response(sys_label: str, f_arr: np.ndarray,
-                  f_c: float, f_n: float, xi: float, V: float
-                  ) -> tuple[np.ndarray, np.ndarray]:
+                  f_c: float, f_n: float) -> tuple[np.ndarray, np.ndarray]:
     """Return (gain_db, phase_deg) for the given frequency array."""
     w  = 2.0 * np.pi * f_arr
     wc = 2.0 * np.pi * f_c
@@ -86,11 +81,11 @@ def freq_response(sys_label: str, f_arr: np.ndarray,
     elif sys_label == "1st Order High-Pass":
         H = (1j * w / wc) / (1.0 + 1j * w / wc)
     elif sys_label == "2nd Order Low-Pass":
-        denom = wn**2 - w**2 + 2j * xi * wn * w
-        H = V * wn**2 / denom
+        denom = wn**2 - w**2 + 2j * XI_FIXED * wn * w
+        H = V_FIXED * wn**2 / denom
     else:  # 2nd Order High-Pass
-        denom = wn**2 - w**2 + 2j * xi * wn * w
-        H = -V * w**2 / denom
+        denom = wn**2 - w**2 + 2j * XI_FIXED * wn * w
+        H = -V_FIXED * w**2 / denom
 
     mag   = np.abs(H)
     gain  = 20.0 * np.log10(np.maximum(mag, 1e-12))
@@ -99,17 +94,16 @@ def freq_response(sys_label: str, f_arr: np.ndarray,
 
 
 def point_response(sys_label: str, f: float,
-                   f_c: float, f_n: float, xi: float, V: float
-                   ) -> tuple[float, float]:
+                   f_c: float, f_n: float) -> tuple[float, float]:
     """Return (gain_linear, phase_deg) at a single frequency."""
-    g_db, ph = freq_response(sys_label, np.array([f]), f_c, f_n, xi, V)
+    g_db, ph = freq_response(sys_label, np.array([f]), f_c, f_n)
     return float(10.0 ** (g_db[0] / 20.0)), float(ph[0])
 
 
 # ─── PLOTS ────────────────────────────────────────────────────────────────────
 def make_time_plot(sys_label: str, f_test: float,
-                   f_c: float, f_n: float, xi: float, V: float) -> go.Figure:
-    gain_lin, phase_deg = point_response(sys_label, f_test, f_c, f_n, xi, V)
+                   f_c: float, f_n: float) -> go.Figure:
+    gain_lin, phase_deg = point_response(sys_label, f_test, f_c, f_n)
     phase_rad = np.radians(phase_deg)
 
     T_test = 1.0 / max(f_test, 0.001)
@@ -137,14 +131,14 @@ def make_time_plot(sys_label: str, f_test: float,
 
 
 def make_bode_magnitude(sys_label: str, f_test: float,
-                         f_c: float, f_n: float, xi: float, V: float,
-                         f_char: float, char_label: str) -> go.Figure:
+                        f_c: float, f_n: float,
+                        f_char: float, char_label: str) -> go.Figure:
     f_lo  = max(f_char / 200.0, 0.001)
     f_hi  = min(f_char * 200.0, 1e5)
     f_arr = np.logspace(np.log10(f_lo), np.log10(f_hi), 800)
 
-    gain_db, _ = freq_response(sys_label, f_arr, f_c, f_n, xi, V)
-    g_test, _  = freq_response(sys_label, np.array([f_test]), f_c, f_n, xi, V)
+    gain_db, _ = freq_response(sys_label, f_arr, f_c, f_n)
+    g_test, _  = freq_response(sys_label, np.array([f_test]), f_c, f_n)
     g_test = float(g_test[0])
 
     g_min = float(np.min(gain_db)) - 5
@@ -181,14 +175,14 @@ def make_bode_magnitude(sys_label: str, f_test: float,
 
 
 def make_bode_phase(sys_label: str, f_test: float,
-                    f_c: float, f_n: float, xi: float, V: float,
+                    f_c: float, f_n: float,
                     f_char: float, char_label: str) -> go.Figure:
     f_lo  = max(f_char / 200.0, 0.001)
     f_hi  = min(f_char * 200.0, 1e5)
     f_arr = np.logspace(np.log10(f_lo), np.log10(f_hi), 800)
 
-    _, phase_deg = freq_response(sys_label, f_arr, f_c, f_n, xi, V)
-    _, ph_test   = freq_response(sys_label, np.array([f_test]), f_c, f_n, xi, V)
+    _, phase_deg = freq_response(sys_label, f_arr, f_c, f_n)
+    _, ph_test   = freq_response(sys_label, np.array([f_test]), f_c, f_n)
     ph_test = float(ph_test[0])
 
     ph_min = float(np.min(phase_deg)) - 10
@@ -247,13 +241,7 @@ def render_sidebar() -> None:
             st.subheader("2nd Order Parameters")
             fn = st.slider("Natural Frequency f_n [Hz]",
                            FN_MIN, FN_MAX, float(safe_get("f_n")), FN_STEP)
-            xi = st.slider("Damping Ratio ξ",
-                           XI_MIN, XI_MAX, float(safe_get("xi")), XI_STEP)
-            V  = st.slider("DC Gain V",
-                           V_MIN, V_MAX, float(safe_get("V")), V_STEP)
             st.session_state["f_n"] = fn
-            st.session_state["xi"]  = xi
-            st.session_state["V"]   = V
 
         st.divider()
         st.subheader("Test Frequency")
@@ -263,20 +251,18 @@ def render_sidebar() -> None:
 
         st.divider()
         st.subheader("💾 Save / Load")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Save JSON", use_container_width=True):
-                data = {k: safe_get(k) for k in DEFAULTS}
-                st.download_button("⬇ Download",
-                                   data=json.dumps(data, indent=2),
-                                   file_name="freq_response_params.json",
-                                   mime="application/json",
-                                   use_container_width=True)
-        with col2:
-            upload = st.file_uploader("Load JSON", type="json",
-                                      label_visibility="collapsed")
-            if upload is not None:
-                _on_upload(upload)
+        if st.button("💾 Save JSON", use_container_width=True):
+            data = {k: safe_get(k) for k in DEFAULTS}
+            st.download_button("⬇️ Download",
+                               data=json.dumps(data, indent=2),
+                               file_name="freq_response_params.json",
+                               mime="application/json",
+                               use_container_width=True)
+        st.markdown("**📂 Load JSON**")
+        upload = st.file_uploader("Load JSON", type="json",
+                                  label_visibility="collapsed")
+        if upload is not None:
+            _on_upload(upload)
 
 
 def _on_upload(upload) -> None:
@@ -295,18 +281,16 @@ def tab_single_freq() -> None:
     sys_label = str(safe_get("sys_label"))
     f_c    = float(safe_get("f_c"))
     f_n    = float(safe_get("f_n"))
-    xi     = float(safe_get("xi"))
-    V      = float(safe_get("V"))
     f_test = float(safe_get("f_test_hz"))
     is_2nd = "2nd" in sys_label
 
-    gain_lin, phase_deg = point_response(sys_label, f_test, f_c, f_n, xi, V)
+    gain_lin, phase_deg = point_response(sys_label, f_test, f_c, f_n)
     gain_db = 20.0 * np.log10(max(gain_lin, 1e-12))
 
     if is_2nd:
         f_char     = f_n
         char_label = f"f_n = {f_n:.2f} Hz"
-        char_str   = f"f_n = {f_n:.2f} Hz, ξ = {xi:.2f}, V = {V:.2f}"
+        char_str   = f"f_n = {f_n:.2f} Hz"
         ratio      = f_test / max(f_n, 1e-9)
     else:
         f_char     = f_c
@@ -336,12 +320,12 @@ def tab_single_freq() -> None:
     c3.metric("Phase Shift",          f"{phase_deg:.1f}°")
 
     st.divider()
-    st.plotly_chart(make_time_plot(sys_label, f_test, f_c, f_n, xi, V),
+    st.plotly_chart(make_time_plot(sys_label, f_test, f_c, f_n),
                     use_container_width=True)
-    st.plotly_chart(make_bode_magnitude(sys_label, f_test, f_c, f_n, xi, V,
+    st.plotly_chart(make_bode_magnitude(sys_label, f_test, f_c, f_n,
                                         f_char, char_label),
                     use_container_width=True)
-    st.plotly_chart(make_bode_phase(sys_label, f_test, f_c, f_n, xi, V,
+    st.plotly_chart(make_bode_phase(sys_label, f_test, f_c, f_n,
                                     f_char, char_label),
                     use_container_width=True)
 
@@ -366,8 +350,8 @@ A **Bode plot** shows this on a logarithmic frequency axis — giving the full p
 |---|---|---|
 | **1st Order Low-Pass** | Passes low frequencies, attenuates high ones | Cutoff frequency f_c |
 | **1st Order High-Pass** | Passes high frequencies, attenuates low ones | Cutoff frequency f_c |
-| **2nd Order Low-Pass** | Steeper roll-off, possible resonance peak | Natural freq f_n, damping ξ |
-| **2nd Order High-Pass** | High-freq emphasis, possible resonance peak | Natural freq f_n, damping ξ |
+| **2nd Order Low-Pass** | Steeper roll-off, smooth transition | Natural frequency f_n |
+| **2nd Order High-Pass** | High-freq emphasis, smooth transition | Natural frequency f_n |
 
 ---
 
@@ -385,12 +369,12 @@ Let ω = 2π · f, ω_c = 2π · f_c, ω_n = 2π · f_n.
     st.markdown("At f = f_c: gain = 1/√2 ≈ **−3 dB**, phase = **+45°**")
 
     st.markdown("**2nd Order Low-Pass**")
-    st.latex(r"H(j\omega) = \frac{V \cdot \omega_n^2}{\omega_n^2 - \omega^2 + 2j\,\xi\,\omega_n\,\omega}")
-    st.markdown("For ξ < 1/√2 ≈ 0.707 a **resonance peak** appears near f_n.")
+    st.latex(r"H(j\omega) = \frac{\omega_n^2}{\omega_n^2 - \omega^2 + 2j\,\xi\,\omega_n\,\omega}")
+    st.markdown("Steeper roll-off than 1st order (−40 dB/decade). Phase shifts from 0° to −180°.")
 
     st.markdown("**2nd Order High-Pass**")
-    st.latex(r"H(j\omega) = \frac{-V \cdot \omega^2}{\omega_n^2 - \omega^2 + 2j\,\xi\,\omega_n\,\omega}")
-    st.markdown("Same denominator – resonance near f_n for small ξ.")
+    st.latex(r"H(j\omega) = \frac{-\omega^2}{\omega_n^2 - \omega^2 + 2j\,\xi\,\omega_n\,\omega}")
+    st.markdown("Steeper rise than 1st order (+40 dB/decade). Phase shifts from +180° to 0°.")
 
     st.markdown("""
 ---
@@ -400,8 +384,8 @@ Let ω = 2π · f, ω_c = 2π · f_c, ω_n = 2π · f_n.
 - **Magnitude plot**: gain in dB vs. log frequency.
   0 dB = output equals input, −20 dB = output is 10× smaller.
 - **Phase plot**: phase shift in degrees vs. log frequency.
-- **Orange dot & dotted line**: current test frequency.
-- **Yellow dashed line**: characteristic frequency (f_c or f_n).
+- **🔴 Orange dot & dotted line**: current test frequency.
+- **🟡 Yellow dashed line**: characteristic frequency (f_c or f_n).
 
 ---
 
@@ -411,19 +395,8 @@ For a 1st-order filter, at f = f_c:
 - Gain = 1/√2 ≈ 0.707 → **−3 dB**
 - Phase shift = exactly **±45°**
 
-For a 2nd-order system, f_n is the **natural frequency**.
-The actual −3 dB point shifts with ξ.
-
----
-
-### Damping Ratio ξ (2nd Order Only)
-
-| ξ | Behaviour |
-|---|---|
-| ξ < 0.5 | Strong resonance peak, oscillatory step response |
-| ξ ≈ 0.707 | No peak (Butterworth), maximally flat passband |
-| ξ = 1.0 | Critically damped, no overshoot |
-| ξ > 1.0 | Over-damped, sluggish response |
+For a 2nd-order system, f_n is the **natural frequency** – the transition region is centred there.
+The roll-off is twice as steep: **−40 dB/decade** instead of −20 dB/decade.
 """)
 
 
@@ -431,7 +404,7 @@ def tab_exercises() -> None:
     st.header("✏️ Exercises")
     st.markdown("Use the **sidebar** to set parameters and the **Single Frequency** tab to read results.")
 
-    with st.expander("Exercise 1 – The −3 dB Point (1st Order)", expanded=True):
+    with st.expander("🔵 Exercise 1 – The −3 dB Point (1st Order)", expanded=True):
         st.markdown("""
 1. Select **1st Order Low-Pass**, set f_c = 2 Hz.
 2. Set f_test = 2 Hz (equal to f_c).
@@ -445,7 +418,7 @@ def tab_exercises() -> None:
 **Expected:** Gain ≈ −3 dB (ratio ≈ 0.707), phase ≈ −45° at f_test = f_c.
 """)
 
-    with st.expander("Exercise 2 – Low-Pass vs. High-Pass", expanded=False):
+    with st.expander("🔵 Exercise 2 – Low-Pass vs. High-Pass (1st Order)", expanded=False):
         st.markdown("""
 1. Select **1st Order Low-Pass**, f_c = 2 Hz, f_test = 2 Hz.
 2. Switch to **1st Order High-Pass** (keep same parameters).
@@ -453,50 +426,56 @@ def tab_exercises() -> None:
 **Questions**
 - Is the gain the same for both types at f_test = f_c?
 - How does the phase sign differ?
-- At very low frequencies, which filter passes the signal? At very high?
+- At very low frequencies, which filter passes the signal? At very high frequencies?
 """)
 
-    with st.expander("Exercise 3 – Resonance Peak (2nd Order Low-Pass)", expanded=False):
+    with st.expander("🟢 Exercise 3 – Steeper Roll-Off (2nd Order Low-Pass)", expanded=False):
         st.markdown("""
-1. Select **2nd Order Low-Pass**, f_n = 5 Hz, ξ = 0.1.
-2. Sweep f_test from 1 Hz up to 5 Hz, watching the metrics.
+1. Select **1st Order Low-Pass**, f_c = 5 Hz.
+2. Note the Bode magnitude slope above f_c.
+3. Now switch to **2nd Order Low-Pass**, f_n = 5 Hz.
 
 **Questions**
-- Near which frequency is the gain highest?
-- Is the peak gain above 0 dB?
-- Set ξ = 1.0. Does the resonance peak disappear?
+- How does the slope above f_n compare to the 1st order case?
+- Is the transition region wider or narrower?
+- Set f_test to 10 Hz, then 50 Hz. Compare the gain values between both filter types.
+
+**Expected:** 2nd order rolls off at −40 dB/decade vs. −20 dB/decade for 1st order.
 """)
 
-    with st.expander("Exercise 4 – Butterworth Condition", expanded=False):
+    with st.expander("🟢 Exercise 4 – Phase Shift of 2nd Order Systems", expanded=False):
         st.markdown("""
-1. Select **2nd Order Low-Pass**, f_n = 5 Hz, ξ = 0.707.
-2. Set f_test = f_n = 5 Hz.
+1. Select **2nd Order Low-Pass**, f_n = 5 Hz.
+2. Set f_test well below f_n (e.g. 0.5 Hz), then at f_n, then well above (e.g. 50 Hz).
 
 **Questions**
-- Is there a visible resonance peak in the Bode magnitude plot?
-- What is the phase at f_n?
-- Compare with ξ = 0.2 and ξ = 2.0.
+- What is the phase at very low frequencies?
+- What is the phase exactly at f_n?
+- What is the total phase shift range for a 2nd order low-pass?
 
-**Expected:** ξ = 0.707 gives no peak and gain = −3 dB at f_n.
+**Expected:** Phase goes from 0° → −90° at f_n → −180° — twice the range of a 1st order filter.
 """)
 
-    with st.expander("Exercise 5 – 2nd Order High-Pass Roll-Off", expanded=False):
+    with st.expander("🟢 Exercise 5 – 2nd Order High-Pass", expanded=False):
         st.markdown("""
-1. Select **2nd Order High-Pass**, f_n = 5 Hz, ξ = 0.3.
+1. Select **2nd Order High-Pass**, f_n = 5 Hz.
 2. Sweep f_test from 0.5 Hz to 50 Hz.
 
 **Questions**
-- Where does the gain peak occur?
 - Below f_n, how steeply does the gain fall off (dB per decade)?
-- Set V = 2.0. How does the magnitude plot shift?
+- At very high frequencies, what does the gain approach?
+- Compare the phase curve with the 2nd Order Low-Pass at the same f_n.
 """)
 
-    with st.expander("Exercise 6 – Predicting the Output Signal", expanded=False):
+    with st.expander("📐 Exercise 6 – Predicting the Output Signal", expanded=False):
         st.markdown("""
 1. Select **1st Order Low-Pass**, f_c = 1 Hz, f_test = 3 Hz.
 2. Note the **Gain [linear ratio]** and **Phase Shift** values.
 
-**Task:** The input is u(t) = sin(2π · 3 · t).
+**Task:** The input signal is:
+
+> u(t) = sin(2π · 3 · t)
+
 Write the expected output y(t) as a formula using the values you read off.
 Verify it matches the time-domain plot.
 """)
