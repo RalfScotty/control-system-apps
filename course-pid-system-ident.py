@@ -67,9 +67,11 @@ def safe_get(key: str):
 _BASE = dict(
     paper_bgcolor=DARK, plot_bgcolor=DARK,
     font=dict(color=TEXT, size=13),
-    margin=dict(l=65, r=30, t=55, b=55),
+    margin=dict(l=65, r=160, t=55, b=70),
 )
-_AX = dict(gridcolor=GRID, zerolinecolor=GRID, linecolor=GRID)
+_AX   = dict(gridcolor=GRID, zerolinecolor=GRID, linecolor=GRID)
+_LEG  = dict(orientation="v", x=1.02, y=1.0, xanchor="left", yanchor="top",
+             bgcolor=DARK, bordercolor=GRID, borderwidth=1, font=dict(size=11))
 
 
 # ─── STEP RESPONSE MATH ───────────────────────────────────────────────────────
@@ -131,8 +133,8 @@ def make_pt1_plot(K: float, T: float) -> go.Figure:
                              name="Tangent at t = 0",
                              line=dict(color=ACC4, width=1.5, dash="dash")))
 
-    y_lo = -K * 0.06
-    y_hi = K * 1.22
+    y_lo = -K * 0.14
+    y_hi = K * 1.20
     shapes = [
         dict(type="line", x0=0, x1=t_end, y0=K, y1=K, xref="x", yref="y",
              line=dict(color=YELL, width=1.5, dash="dash")),
@@ -146,21 +148,24 @@ def make_pt1_plot(K: float, T: float) -> go.Figure:
              line=dict(color=ACC3, width=1.0, dash="dot")),
     ]
     annots = [
-        dict(x=t_end * 0.97, y=K * 1.05, xref="x", yref="y",
+        # K label – left side, above the dashed K-line
+        dict(x=t_end * 0.03, y=K * 1.02, xref="x", yref="y",
              text=f"K = {K:.2f}", font=dict(color=YELL, size=11),
-             showarrow=False, xanchor="right"),
-        dict(x=T, y=y_lo * 0.4, xref="x", yref="y",
-             text=f"T = {T:.1f} s", font=dict(color=ACC3, size=11),
-             showarrow=False, xanchor="center"),
-        dict(x=3*T, y=y_lo * 0.4, xref="x", yref="y",
-             text=f"3T", font=dict(color=ACC3, size=10),
-             showarrow=False, xanchor="center"),
-        dict(x=5*T, y=y_lo * 0.4, xref="x", yref="y",
-             text=f"5T", font=dict(color=ACC3, size=10),
-             showarrow=False, xanchor="center"),
-        dict(x=T * 0.3, y=0.632 * K, xref="x", yref="y",
+             showarrow=False, xanchor="left", yanchor="bottom"),
+        # 63.2% label – to the right of the T-vertical, just above the horizontal line
+        dict(x=T * 1.05, y=0.632 * K, xref="x", yref="y",
              text="63.2 %", font=dict(color=ACC3, size=10),
-             showarrow=False, yanchor="bottom"),
+             showarrow=False, xanchor="left", yanchor="bottom"),
+        # time-axis labels well below x=0
+        dict(x=T,    y=y_lo * 0.75, xref="x", yref="y",
+             text=f"T = {T:.1f} s", font=dict(color=ACC3, size=11),
+             showarrow=False, xanchor="center", yanchor="middle"),
+        dict(x=3*T,  y=y_lo * 0.75, xref="x", yref="y",
+             text="3T", font=dict(color=ACC3, size=10),
+             showarrow=False, xanchor="center", yanchor="middle"),
+        dict(x=5*T,  y=y_lo * 0.75, xref="x", yref="y",
+             text="5T", font=dict(color=ACC3, size=10),
+             showarrow=False, xanchor="center", yanchor="middle"),
     ]
     fig.update_layout(
         **_BASE,
@@ -168,7 +173,7 @@ def make_pt1_plot(K: float, T: float) -> go.Figure:
         xaxis=dict(title="Time [s]", **_AX),
         yaxis=dict(title="Output y(t)", range=[y_lo, y_hi], **_AX),
         shapes=shapes, annotations=annots,
-        legend=dict(orientation="h", y=1.14, x=0.0, bgcolor="rgba(0,0,0,0)", font=dict(size=12)),
+        legend=_LEG,
         height=420,
     )
     return fig
@@ -195,10 +200,11 @@ def make_it1_plot(K_I: float, T: float) -> go.Figure:
                              name=f"Asymptote  slope = K_I = {K_I:.3f}",
                              line=dict(color=ACC4, width=1.8, dash="dash")))
 
-    y_max = float(np.max(y)) * 1.15
+    y_min = -float(np.max(y)) * 0.08
+    y_max = float(np.max(y)) * 1.12
     shapes = [
         # vertical at T (asymptote zero crossing)
-        dict(type="line", x0=T, x1=T, y0=-y_max * 0.06, y1=y_max * 0.3,
+        dict(type="line", x0=T, x1=T, y0=y_min, y1=y_max * 0.30,
              xref="x", yref="y", line=dict(color=ACC3, width=1.5, dash="dot")),
         # slope triangle: horizontal leg
         dict(type="line", x0=t_s1, x1=t_s2, y0=y_s1, y1=y_s1,
@@ -208,26 +214,30 @@ def make_it1_plot(K_I: float, T: float) -> go.Figure:
              xref="x", yref="y", line=dict(color=YELL, width=1.2, dash="dot")),
     ]
     annots = [
-        dict(x=T, y=-y_max * 0.04, xref="x", yref="y",
+        # T label – to the right of the vertical orange line, mid-height
+        dict(x=T * 1.04, y=y_max * 0.20, xref="x", yref="y",
              text=f"T = {T:.1f} s", font=dict(color=ACC3, size=11),
-             showarrow=False, xanchor="center"),
+             showarrow=False, xanchor="left", yanchor="middle"),
+        # Δt – below the horizontal triangle leg
         dict(x=(t_s1 + t_s2) / 2, y=y_s1, xref="x", yref="y",
              text=f"Δt = {t_s2-t_s1:.1f} s", font=dict(color=YELL, size=10),
-             showarrow=False, yanchor="top"),
+             showarrow=False, xanchor="center", yanchor="top"),
+        # Δy – to the right of the vertical triangle leg, centred
         dict(x=t_s2 * 1.01, y=(y_s1 + y_s2) / 2, xref="x", yref="y",
              text=f"Δy = {y_s2-y_s1:.2f}", font=dict(color=YELL, size=10),
-             showarrow=False, xanchor="left"),
-        dict(x=t_end * 0.6, y=y_max * 0.95, xref="x", yref="y",
+             showarrow=False, xanchor="left", yanchor="middle"),
+        # K_I label – upper-left, well clear of the rising curves
+        dict(x=t_end * 0.05, y=y_max * 0.92, xref="x", yref="y",
              text=f"K_I = Δy/Δt = {K_I:.3f}", font=dict(color=ACC4, size=11),
-             showarrow=False, xanchor="left"),
+             showarrow=False, xanchor="left", yanchor="top"),
     ]
     fig.update_layout(
         **_BASE,
         title=dict(text="IT1 – Step Response with Identification Markers", font=dict(size=15)),
         xaxis=dict(title="Time [s]", **_AX),
-        yaxis=dict(title="Output y(t)", range=[-y_max * 0.06, y_max], **_AX),
+        yaxis=dict(title="Output y(t)", range=[y_min, y_max], **_AX),
         shapes=shapes, annotations=annots,
-        legend=dict(orientation="h", y=1.14, x=0.0, bgcolor="rgba(0,0,0,0)", font=dict(size=12)),
+        legend=_LEG,
         height=420,
     )
     return fig
@@ -268,8 +278,9 @@ def make_pt2_plot(K: float, T1: float, T2: float) -> go.Figure:
                              name="Inflection point",
                              marker=dict(color=ACC3, size=10, symbol="circle")))
 
-    y_lo = -K * 0.07
+    y_lo = -K * 0.16
     y_hi = K * 1.20
+    brk_y = y_lo * 0.60   # y-position of the Tu / Tg brackets
     shapes = [
         dict(type="line", x0=0, x1=t_end, y0=K, y1=K, xref="x", yref="y",
              line=dict(color=YELL, width=1.5, dash="dash")),
@@ -278,25 +289,30 @@ def make_pt2_plot(K: float, T1: float, T2: float) -> go.Figure:
         dict(type="line", x0=t_K, x1=t_K, y0=y_lo, y1=K,
              xref="x", yref="y", line=dict(color=ACC3, width=1.2, dash="dot")),
         # Tu bracket
-        dict(type="line", x0=0, x1=Tu, y0=y_lo * 0.55, y1=y_lo * 0.55,
+        dict(type="line", x0=0, x1=Tu, y0=brk_y, y1=brk_y,
              xref="x", yref="y", line=dict(color=ACC3, width=1.5)),
         # Tg bracket
-        dict(type="line", x0=Tu, x1=t_K, y0=y_lo * 0.55, y1=y_lo * 0.55,
+        dict(type="line", x0=Tu, x1=t_K, y0=brk_y, y1=brk_y,
              xref="x", yref="y", line=dict(color=YELL, width=1.5)),
     ]
     annots = [
-        dict(x=t_end * 0.97, y=K * 1.04, xref="x", yref="y",
+        # K label – left side, above the dashed K-line
+        dict(x=t_end * 0.03, y=K * 1.02, xref="x", yref="y",
              text=f"K = {K:.2f}", font=dict(color=YELL, size=11),
-             showarrow=False, xanchor="right"),
-        dict(x=Tu / 2, y=y_lo * 0.45, xref="x", yref="y",
+             showarrow=False, xanchor="left", yanchor="bottom"),
+        # Tu bracket label – centred in bracket, above bracket line
+        dict(x=Tu / 2, y=brk_y, xref="x", yref="y",
              text=f"Tu = {Tu:.2f} s", font=dict(color=ACC3, size=11),
-             showarrow=False, xanchor="center"),
-        dict(x=(Tu + t_K) / 2, y=y_lo * 0.45, xref="x", yref="y",
+             showarrow=False, xanchor="center", yanchor="top"),
+        # Tg bracket label – centred in bracket, above bracket line
+        dict(x=(Tu + t_K) / 2, y=brk_y, xref="x", yref="y",
              text=f"Tg = {Tg:.2f} s", font=dict(color=YELL, size=11),
-             showarrow=False, xanchor="center"),
-        dict(x=t_w, y=y_w + K * 0.05, xref="x", yref="y",
+             showarrow=False, xanchor="center", yanchor="top"),
+        # inflection point label – arrow pointing to the marker
+        dict(x=t_w, y=y_w, xref="x", yref="y",
              text="inflection", font=dict(color=ACC3, size=10),
-             showarrow=False, xanchor="left"),
+             showarrow=True, arrowhead=2, arrowcolor=ACC3, arrowwidth=1.2,
+             ax=30, ay=-28, xanchor="left"),
     ]
     fig.update_layout(
         **_BASE,
@@ -304,7 +320,7 @@ def make_pt2_plot(K: float, T1: float, T2: float) -> go.Figure:
         xaxis=dict(title="Time [s]", **_AX),
         yaxis=dict(title="Output y(t)", range=[y_lo, y_hi], **_AX),
         shapes=shapes, annotations=annots,
-        legend=dict(orientation="h", y=1.14, x=0.0, bgcolor="rgba(0,0,0,0)", font=dict(size=12)),
+        legend=_LEG,
         height=420,
     )
     return fig, Tu, Tg
@@ -337,31 +353,37 @@ def make_pt2osc_plot(K: float, f_n: float, xi: float) -> go.Figure:
                              name=f"1st peak  ({Mp_pct:.1f}% overshoot)",
                              marker=dict(color=YELL, size=11, symbol="diamond")))
 
-    y_lo = K * (0.0 - Mp_ratio * 0.3)
-    y_hi = y_peak * 1.12
+    y_lo = K * (0.0 - Mp_ratio * 0.55)
+    y_hi = y_peak * 1.10
+    brk_y = y_lo * 0.65   # y-position of the Td bracket
     shapes = [
         dict(type="line", x0=0, x1=t_end, y0=K, y1=K, xref="x", yref="y",
              line=dict(color=YELL, width=1.5, dash="dash")),
         # vertical at first peak
         dict(type="line", x0=t_peak, x1=t_peak, y0=K, y1=y_peak, xref="x", yref="y",
              line=dict(color=YELL, width=1.2, dash="dot")),
-        # T_d bracket (1st to 2nd peak, i.e. one full period)
-        dict(type="line", x0=t_peak, x1=t_peak + T_d, y0=y_lo * 0.6, y1=y_lo * 0.6,
+        # Td bracket
+        dict(type="line", x0=t_peak, x1=t_peak + T_d, y0=brk_y, y1=brk_y,
              xref="x", yref="y", line=dict(color=ACC3, width=1.5)),
     ]
     annots = [
-        dict(x=t_end * 0.97, y=K * 1.02, xref="x", yref="y",
+        # K label – left side, above the dashed K-line
+        dict(x=t_end * 0.03, y=K * 1.02, xref="x", yref="y",
              text=f"K = {K:.2f}", font=dict(color=YELL, size=11),
-             showarrow=False, xanchor="right", yanchor="bottom"),
-        dict(x=t_peak, y=y_peak + K * 0.04, xref="x", yref="y",
+             showarrow=False, xanchor="left", yanchor="bottom"),
+        # Mp label – arrow pointing to the peak diamond
+        dict(x=t_peak, y=y_peak, xref="x", yref="y",
              text=f"Mp = {Mp_pct:.1f}%", font=dict(color=YELL, size=11),
-             showarrow=False, xanchor="left"),
-        dict(x=t_peak + T_d / 2, y=y_lo * 0.5, xref="x", yref="y",
+             showarrow=True, arrowhead=2, arrowcolor=YELL, arrowwidth=1.2,
+             ax=35, ay=-25, xanchor="left"),
+        # Td bracket label – centred in bracket, above bracket line
+        dict(x=t_peak + T_d / 2, y=brk_y, xref="x", yref="y",
              text=f"Td = {T_d:.3f} s", font=dict(color=ACC3, size=11),
-             showarrow=False, xanchor="center"),
-        dict(x=t_end * 0.97, y=y_lo * 0.9, xref="x", yref="y",
+             showarrow=False, xanchor="center", yanchor="top"),
+        # fn / xi – bottom-left, well clear of all markers
+        dict(x=t_end * 0.03, y=y_lo * 0.80, xref="x", yref="y",
              text=f"fn = {f_n:.3f} Hz  ξ = {xi:.3f}", font=dict(color=ACC3, size=11),
-             showarrow=False, xanchor="right"),
+             showarrow=False, xanchor="left", yanchor="middle"),
     ]
     fig.update_layout(
         **_BASE,
@@ -369,7 +391,7 @@ def make_pt2osc_plot(K: float, f_n: float, xi: float) -> go.Figure:
         xaxis=dict(title="Time [s]", **_AX),
         yaxis=dict(title="Output y(t)", range=[y_lo, y_hi], **_AX),
         shapes=shapes, annotations=annots,
-        legend=dict(orientation="h", y=1.14, x=0.0, bgcolor="rgba(0,0,0,0)", font=dict(size=12)),
+        legend=_LEG,
         height=420,
     )
     return fig, t_peak, Mp_pct, T_d
