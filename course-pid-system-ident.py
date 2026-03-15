@@ -29,7 +29,15 @@ P2O_K_MIN,  P2O_K_MAX,  P2O_K_STEP   = 0.1, 5.0, 0.1
 P2O_FN_MIN, P2O_FN_MAX, P2O_FN_STEP  = 0.05, 5.0, 0.05
 P2O_XI_MIN, P2O_XI_MAX, P2O_XI_STEP  = 0.02, 0.95, 0.01
 
+SYS_TYPES = [
+    "PT1 – 1st Order Lag",
+    "IT1 – Integrator + Lag",
+    "PT2 – 2nd Order Non-Oscillating",
+    "PT2osc – 2nd Order Oscillating",
+]
+
 DEFAULTS: dict = {
+    "sys_type": "PT1 – 1st Order Lag",
     "pt1_K":  2.0,  "pt1_T":  5.0,
     "it1_KI": 0.3,  "it1_T":  4.0,
     "pt2_K":  1.5,  "pt2_T1": 8.0,  "pt2_T2": 2.0,
@@ -372,46 +380,56 @@ def render_sidebar() -> None:
     with st.sidebar:
         st.header("⚙️ System Parameters")
 
-        st.subheader("📈 PT1 – 1st Order Lag")
-        pt1_K = st.slider("Gain K", PT1_K_MIN, PT1_K_MAX,
+        sys_choice = st.selectbox(
+            "System Type",
+            SYS_TYPES,
+            index=SYS_TYPES.index(str(safe_get("sys_type"))),
+        )
+        st.session_state["sys_type"] = sys_choice
+
+        st.divider()
+
+        if sys_choice == "PT1 – 1st Order Lag":
+            st.subheader("📈 PT1 Parameters")
+            v = st.slider("Gain K", PT1_K_MIN, PT1_K_MAX,
                           float(safe_get("pt1_K")), PT1_K_STEP)
-        pt1_T = st.slider("Time Constant T [s]", PT1_T_MIN, PT1_T_MAX,
+            st.session_state["pt1_K"] = v
+            v = st.slider("Time Constant T [s]", PT1_T_MIN, PT1_T_MAX,
                           float(safe_get("pt1_T")), PT1_T_STEP)
-        st.session_state["pt1_K"] = pt1_K
-        st.session_state["pt1_T"] = pt1_T
+            st.session_state["pt1_T"] = v
 
-        st.divider()
-        st.subheader("📈 IT1 – Integrator + Lag")
-        it1_KI = st.slider("Integration Gain K_I", IT1_KI_MIN, IT1_KI_MAX,
-                           float(safe_get("it1_KI")), IT1_KI_STEP)
-        it1_T = st.slider("Lag Time Constant T [s]", IT1_T_MIN, IT1_T_MAX,
+        elif sys_choice == "IT1 – Integrator + Lag":
+            st.subheader("📈 IT1 Parameters")
+            v = st.slider("Integration Gain K_I", IT1_KI_MIN, IT1_KI_MAX,
+                          float(safe_get("it1_KI")), IT1_KI_STEP)
+            st.session_state["it1_KI"] = v
+            v = st.slider("Lag Time Constant T [s]", IT1_T_MIN, IT1_T_MAX,
                           float(safe_get("it1_T")), IT1_T_STEP)
-        st.session_state["it1_KI"] = it1_KI
-        st.session_state["it1_T"] = it1_T
+            st.session_state["it1_T"] = v
 
-        st.divider()
-        st.subheader("📈 PT2 – 2nd Order Non-Oscillating")
-        pt2_K = st.slider("Gain K ", PT2_K_MIN, PT2_K_MAX,
+        elif sys_choice == "PT2 – 2nd Order Non-Oscillating":
+            st.subheader("📈 PT2 Parameters")
+            v = st.slider("Gain K", PT2_K_MIN, PT2_K_MAX,
                           float(safe_get("pt2_K")), PT2_K_STEP)
-        pt2_T1 = st.slider("Dominant Time Constant T1 [s]", PT2_T1_MIN, PT2_T1_MAX,
-                           float(safe_get("pt2_T1")), PT2_T1_STEP)
-        pt2_T2 = st.slider("Second Time Constant T2 [s]", PT2_T2_MIN, PT2_T2_MAX,
-                           float(safe_get("pt2_T2")), PT2_T2_STEP)
-        st.session_state["pt2_K"]  = pt2_K
-        st.session_state["pt2_T1"] = pt2_T1
-        st.session_state["pt2_T2"] = pt2_T2
+            st.session_state["pt2_K"] = v
+            v = st.slider("Dominant Time Constant T1 [s]", PT2_T1_MIN, PT2_T1_MAX,
+                          float(safe_get("pt2_T1")), PT2_T1_STEP)
+            st.session_state["pt2_T1"] = v
+            v = st.slider("Second Time Constant T2 [s]", PT2_T2_MIN, PT2_T2_MAX,
+                          float(safe_get("pt2_T2")), PT2_T2_STEP)
+            st.session_state["pt2_T2"] = v
 
-        st.divider()
-        st.subheader("📈 PT2osc – 2nd Order Oscillating")
-        p2o_K  = st.slider("Gain K  ", P2O_K_MIN, P2O_K_MAX,
-                           float(safe_get("p2o_K")), P2O_K_STEP)
-        p2o_fn = st.slider("Natural Frequency fn [Hz]", P2O_FN_MIN, P2O_FN_MAX,
-                           float(safe_get("p2o_fn")), P2O_FN_STEP)
-        p2o_xi = st.slider("Damping Ratio ξ", P2O_XI_MIN, P2O_XI_MAX,
-                           float(safe_get("p2o_xi")), P2O_XI_STEP)
-        st.session_state["p2o_K"]  = p2o_K
-        st.session_state["p2o_fn"] = p2o_fn
-        st.session_state["p2o_xi"] = p2o_xi
+        else:  # PT2osc
+            st.subheader("📈 PT2osc Parameters")
+            v = st.slider("Gain K", P2O_K_MIN, P2O_K_MAX,
+                          float(safe_get("p2o_K")), P2O_K_STEP)
+            st.session_state["p2o_K"] = v
+            v = st.slider("Natural Frequency fn [Hz]", P2O_FN_MIN, P2O_FN_MAX,
+                          float(safe_get("p2o_fn")), P2O_FN_STEP)
+            st.session_state["p2o_fn"] = v
+            v = st.slider("Damping Ratio ξ", P2O_XI_MIN, P2O_XI_MAX,
+                          float(safe_get("p2o_xi")), P2O_XI_STEP)
+            st.session_state["p2o_xi"] = v
 
         st.divider()
         st.subheader("💾 Save / Load")
@@ -849,9 +867,8 @@ def main() -> None:
     st.title("🔍 System Identification from Step Responses")
 
     st.markdown("""
-This app shows how to **identify the parameters of a dynamic system** from its step response.
-Each tab covers one system type. Set the parameters in the sidebar, observe the step response,
-and read off the key values using the graphical markers drawn directly on the plot.
+Select a **System Type** in the sidebar — only the relevant parameters will appear.
+Switch between tabs to view the step response, read theory, or work through exercises.
 
 | System | Shape | Key parameters |
 |---|---|---|
@@ -862,20 +879,21 @@ and read off the key values using the graphical markers drawn directly on the pl
 """)
     st.divider()
 
-    tabs = st.tabs([
-        "📈 PT1 – 1st Order Lag",
-        "📈 IT1 – Integrator + Lag",
-        "📈 PT2 – Non-Oscillating",
-        "📈 PT2osc – Oscillating",
-        "📖 Explanation",
-        "✏️ Exercises",
-    ])
-    with tabs[0]: tab_pt1()
-    with tabs[1]: tab_it1()
-    with tabs[2]: tab_pt2()
-    with tabs[3]: tab_pt2osc()
-    with tabs[4]: tab_explanation()
-    with tabs[5]: tab_exercises()
+    tabs = st.tabs(["📊 Step Response", "📖 Explanation", "✏️ Exercises"])
+
+    with tabs[0]:
+        sys_type = str(safe_get("sys_type"))
+        if sys_type == "PT1 – 1st Order Lag":
+            tab_pt1()
+        elif sys_type == "IT1 – Integrator + Lag":
+            tab_it1()
+        elif sys_type == "PT2 – 2nd Order Non-Oscillating":
+            tab_pt2()
+        else:
+            tab_pt2osc()
+
+    with tabs[1]: tab_explanation()
+    with tabs[2]: tab_exercises()
 
 
 if __name__ == "__main__":
