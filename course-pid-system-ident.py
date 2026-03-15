@@ -337,6 +337,11 @@ def make_pt2osc_plot(K: float, f_n: float, xi: float) -> go.Figure:
     y_peak = K * (1.0 + Mp_ratio)
     Mp_pct = Mp_ratio * 100.0
 
+    # second peak (one full damped period later)
+    t_peak2  = t_peak + T_d
+    Mp2_ratio = np.exp(-3.0 * np.pi * xi / np.sqrt(1.0 - xi**2))
+    y_peak2  = K * (1.0 + Mp2_ratio)
+
     # decay envelope
     env_upper = K * (1.0 + np.exp(-xi * wn * t) / np.sqrt(1.0 - xi**2))
     env_lower = K * (1.0 - np.exp(-xi * wn * t) / np.sqrt(1.0 - xi**2))
@@ -349,8 +354,8 @@ def make_pt2osc_plot(K: float, f_n: float, xi: float) -> go.Figure:
                              line=dict(color=ACC3, width=1.0, dash="dot"), showlegend=False))
     fig.add_trace(go.Scatter(x=t, y=y, mode="lines", name="Step response",
                              line=dict(color=ACC1, width=2.5)))
-    fig.add_trace(go.Scatter(x=[t_peak], y=[y_peak], mode="markers",
-                             name=f"1st peak  ({Mp_pct:.1f}% overshoot)",
+    fig.add_trace(go.Scatter(x=[t_peak, t_peak2], y=[y_peak, y_peak2], mode="markers",
+                             name=f"Peaks (1st: {Mp_pct:.1f}% overshoot)",
                              marker=dict(color=YELL, size=11, symbol="diamond")))
 
     y_lo = K * (0.0 - Mp_ratio * 0.55)
@@ -359,11 +364,14 @@ def make_pt2osc_plot(K: float, f_n: float, xi: float) -> go.Figure:
     shapes = [
         dict(type="line", x0=0, x1=t_end, y0=K, y1=K, xref="x", yref="y",
              line=dict(color=YELL, width=1.5, dash="dash")),
-        # vertical at first peak
-        dict(type="line", x0=t_peak, x1=t_peak, y0=K, y1=y_peak, xref="x", yref="y",
+        # vertical at first peak – from x-axis to peak
+        dict(type="line", x0=t_peak, x1=t_peak, y0=0, y1=y_peak, xref="x", yref="y",
+             line=dict(color=YELL, width=1.2, dash="dot")),
+        # vertical at second peak – same style
+        dict(type="line", x0=t_peak2, x1=t_peak2, y0=0, y1=y_peak2, xref="x", yref="y",
              line=dict(color=YELL, width=1.2, dash="dot")),
         # Td bracket
-        dict(type="line", x0=t_peak, x1=t_peak + T_d, y0=brk_y, y1=brk_y,
+        dict(type="line", x0=t_peak, x1=t_peak2, y0=brk_y, y1=brk_y,
              xref="x", yref="y", line=dict(color=ACC3, width=1.5)),
     ]
     annots = [
@@ -371,19 +379,15 @@ def make_pt2osc_plot(K: float, f_n: float, xi: float) -> go.Figure:
         dict(x=t_end * 0.03, y=K * 1.02, xref="x", yref="y",
              text=f"K = {K:.2f}", font=dict(color=YELL, size=11),
              showarrow=False, xanchor="left", yanchor="bottom"),
-        # Mp label – arrow pointing to the peak diamond
+        # Mp label – arrow pointing to first peak
         dict(x=t_peak, y=y_peak, xref="x", yref="y",
              text=f"Mp = {Mp_pct:.1f}%", font=dict(color=YELL, size=11),
              showarrow=True, arrowhead=2, arrowcolor=YELL, arrowwidth=1.2,
              ax=35, ay=-25, xanchor="left"),
-        # Td bracket label – centred in bracket, above bracket line
-        dict(x=t_peak + T_d / 2, y=brk_y, xref="x", yref="y",
+        # Td bracket label – centred between the two peak verticals
+        dict(x=(t_peak + t_peak2) / 2, y=brk_y, xref="x", yref="y",
              text=f"Td = {T_d:.3f} s", font=dict(color=ACC3, size=11),
              showarrow=False, xanchor="center", yanchor="top"),
-        # fn / xi – bottom-left, well clear of all markers
-        dict(x=t_end * 0.03, y=y_lo * 0.80, xref="x", yref="y",
-             text=f"fn = {f_n:.3f} Hz  ξ = {xi:.3f}", font=dict(color=ACC3, size=11),
-             showarrow=False, xanchor="left", yanchor="middle"),
     ]
     fig.update_layout(
         **_BASE,
