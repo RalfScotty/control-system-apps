@@ -45,10 +45,11 @@ C_OP = "orange"
 
 @dataclass(frozen=True)
 class PlantConfig:
-    V: float       # Process gain
-    T: float       # Time constant (s)
-    xi: float      # Damping factor
-    Tdelay: float  # Dead time (s)
+    V: float         # Process gain
+    T: float         # Time constant (s)
+    xi: float        # Damping factor
+    Tdelay: float    # Dead time (s)
+    noise_amp: float # Measurement noise amplitude (±)
 
 @dataclass(frozen=True)
 class CtrlConfig:
@@ -68,7 +69,7 @@ class CtrlState(IntEnum):
 # === 4. DEFAULTS & STATE MANAGEMENT ===
 
 DEFAULTS = dict(
-    V=4.0, T=80.0, xi=3.0, Tdelay=5.0,
+    V=4.0, T=80.0, xi=3.0, Tdelay=5.0, noise_amp=0.0,
     hys=0.5,
     sp1=100.0, sp2=150.0, sp3=0.0,
     t1=500.0, t2=750.0,
@@ -129,7 +130,7 @@ def simulate(plant: PlantConfig, ctrl: CtrlConfig):
         y = odeint(_process, pv[i], [0, Ts],
                    args=(op[iop], plant.V, plant.T, plant.xi))
 
-        noise = (np.random.randint(3) - 1) / 10.0 if i % 10 == 0 else 0.0
+        noise = np.random.uniform(-plant.noise_amp, plant.noise_amp)
         pv[i + 1, 0] = y[-1, 0] + noise
         pv[i + 1, 1] = y[-1, 1]
 
@@ -196,6 +197,8 @@ def render_sidebar():
                   help="Damping factor (>1 = overdamped)")
         st.slider("Dead Time Tdelay (s)", 0.0, 30.0, key="Tdelay", step=1.0,
                   help="Transport/dead time delay")
+        st.slider("Signal Noise ±", 0.0, 5.0, key="noise_amp", step=0.1,
+                  help="Amplitude of uniform measurement noise added to PV (0 = noise-free)")
         st.divider()
 
         # --- Controller ---
@@ -234,7 +237,7 @@ def render_sidebar():
                 raw = json.load(st.session_state["uploaded_cfg"])
                 for k, lo, hi in [
                     ("V", 0.5, 10.0), ("T", 10.0, 300.0), ("xi", 0.5, 5.0),
-                    ("Tdelay", 0.0, 30.0), ("hys", 0.0, 10.0),
+                    ("Tdelay", 0.0, 30.0), ("noise_amp", 0.0, 5.0), ("hys", 0.0, 10.0),
                     ("sp1", 0.0, 200.0), ("sp2", 0.0, 200.0), ("sp3", 0.0, 200.0),
                     ("t1", 10.0, 900.0), ("t2", 10.0, 950.0), ("Tend", 100.0, 5000.0),
                 ]:
@@ -341,6 +344,16 @@ Dead time $T_{delay}$ makes bang-bang control more challenging:
 the controller reacts to **old** process values, causing the system to overshoot
 before the output change takes effect. Larger dead times → larger oscillations.
 """)
+        st.subheader("Measurement Noise (n)")
+        st.warning("""
+Real sensors never measure perfectly — they always add a small random error to the PV signal.
+This is called **measurement noise** ($n$).
+
+For a bang-bang controller, noise is particularly critical: if $n$ is larger than the hysteresis band $h$,
+the noise alone can trigger unwanted switching even when the process is steady.
+
+**Mitigation:** Increase the hysteresis band $h \\geq n_{max}$ to prevent noise-induced switching.
+""")
 
 def render_tab_exercises():
     st.subheader("Exercises — Bang-Bang Level Controller")
@@ -386,6 +399,34 @@ The controller then switches too late, amplifying the oscillation.
 **Rule of thumb:** For bang-bang control, keep $T_{delay} \ll T$ to minimize overshoot.
 """)
 
+    with st.expander("📝 Exercise 4: Signal Noise & Hysteresis"):
+        st.markdown(r"""
+**Task:** Set Signal Noise to $n = 0$ (baseline), then increase it to $n = 0.5$, $n = 1.0$, and $n = 3.0$.
+Keep the hysteresis band at $h = 0.5$ throughout.
+
+Observe the number of controller switches and the PV signal shape.
+
+Then set $n = 2.0$ and try different hysteresis values: $h = 0.5$, $h = 2.0$, $h = 3.0$.
+
+**Question:** What relationship between $n$ and $h$ ensures stable (non-chattering) control?
+""")
+        with st.expander("🔍 Solution"):
+            st.markdown(r"Stable control requires $h \geq n_{max}$. When noise exceeds the hysteresis band, the controller chatters (switches) even without a real process change.")
+        with st.expander("💡 Explanation"):
+            st.markdown(r"""
+The bang-bang controller switches when the error $e = SP - PV$ crosses $\pm h$.
+Since $PV_{measured} = PV_{true} + n$, noise directly corrupts the error signal:
+
+$$e_{measured} = SP - PV_{true} - n$$
+
+If $|n| > h$, noise alone can push $e$ across the switching threshold — even when
+the true process value is already at the set point. This causes **chattering**:
+rapid, unnecessary switching that wears out actuators.
+
+**Design rule:** Always choose $h > n_{max}$ to ensure the dead-band is wider than the noise amplitude.
+A typical safety margin is $h \approx 2 \cdot n_{rms}$.
+""")
+
     with st.expander("📝 Exercise 3: Set Point Steps"):
         st.markdown("""
 **Task:** Configure a three-step set point profile:
@@ -415,6 +456,7 @@ def main():
     plant = PlantConfig(
         V=safe_get("V"), T=safe_get("T"),
         xi=safe_get("xi"), Tdelay=safe_get("Tdelay"),
+        noise_amp=safe_get("noise_amp"),
     )
     ctrl = CtrlConfig(
         hys=safe_get("hys"),
